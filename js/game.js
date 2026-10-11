@@ -42,7 +42,14 @@
       cohorts: {},
       h2h: {},
       lostTo: [],
-      standings: {}
+      standings: {},
+      realign: {},
+      invite: null,
+      postseason: null,
+      rankings: [],
+      grad: [],
+      futureStars: [],
+      famousAlumni: []
     };
   }
   const STARTER_MAJORS = ['bio', 'bus', 'cs', 'engl', 'psych', 'hist'];
@@ -446,7 +453,9 @@
       { label: 'Marketing', mult: 1 + 0.12 * Math.log2(1 + s.recruit.marketing / 200000) },
       { label: 'Early programs', mult: 1 + (s.early.ea ? 0.06 : 0) + (s.early.ed ? 0.03 : 0) },
       { label: 'Career outcomes', mult: 0.85 + outcomeScore() / 333 },
-      { label: 'Athletics exposure', mult: D.DIVISIONS[s.athletics.division].appMult * (1 + conferenceOf().tv / 1e8) }
+      { label: 'Athletics exposure', mult: D.DIVISIONS[s.athletics.division].appMult * (1 + conferenceOf().tv / 1e8) },
+      { label: 'National ranking', mult: 1 + Math.max(0, 150 - (currentRank() || 999)) / 150 * 0.3 },
+      { label: 'Graduate schools & research', mult: 1 + (researchScore() - 35) / 400 }
     ];
     const base = 90 + 3.5 * s.prestige;
     const total = f.reduce((x, k) => x * k.mult, base);
@@ -962,7 +971,7 @@
       if (s.athletics.transition > 0) continue;
       if (r.champ) {
         add('good', r.name + ' won the ' + conf.name + ' championship (' + r.cw + '–' + r.cl + ' in conference).', { prestige: 0.15 * big, buzz: 1 * big });
-        if (pct >= 0.75 && rng() < 0.4) {
+        if (s.athletics.division !== 'D1' && pct >= 0.75 && rng() < 0.4) {
           const flagship = r.id === 'm-football' || r.id === 'm-basketball' || r.id === 'w-basketball';
           const money = flagship ? roundTo(rand(0.3, 1.2) * div.revenue * 1e6, 50000) : 0;
           add('good', r.name + ' made a deep run in the national ' + (r.id === 'm-football' ? 'playoff' : 'tournament') + '.', { prestige: 0.2 * big, buzz: 3 * big, money });
@@ -992,6 +1001,332 @@
       if (!s.athletics.transition) add('good', s.school.name + ' completed its move to ' + div.label + '. Teams can now win conference titles.', { buzz: 2 });
     }
     return ev;
+  }
+
+  // ---------- conference realignment ----------
+  // Real schools can change conferences during a game. Moves are saved as overrides on top of js/schools.js.
+  for (const x of SCHOOLS) x.baseConf = x.conf;
+  let confMembers = new Map();
+  function applyRealignment() {
+    const moves = (state && state.realign) || {};
+    for (const x of SCHOOLS) x.conf = moves[x.id] || x.baseConf;
+    confMembers = new Map();
+    for (const c of CONFERENCES) if (c.real) confMembers.set(c.id, []);
+    for (const x of SCHOOLS) if (confMembers.has(x.conf)) confMembers.get(x.conf).push(x.id);
+  }
+  for (const c of CONFERENCES) {
+    if (!c.real) continue;
+    delete c.members;
+    Object.defineProperty(c, 'members', { get() { return confMembers.get(this.id) || []; }, enumerable: true });
+  }
+  applyRealignment();
+
+  // Every few years a strong school jumps to a richer conference, and the weakest member there may drop down.
+  function realignmentWave() {
+    const s = state;
+    const ev = [];
+    const real = CONFERENCES.filter(c => c.real);
+    const moveSchool = (x, to, from) => {
+      s.realign[x.id] = to.id === x.baseConf ? undefined : to.id;
+      if (!s.realign[x.id]) delete s.realign[x.id];
+      ev.push({ tone: from.id === s.athletics.conference || to.id === s.athletics.conference ? 'warn' : 'good',
+        text: 'Realignment: ' + x.name + ' is leaving the ' + from.name + ' for the ' + to.name + '.', prestige: 0, buzz: 0, money: 0 });
+      x.conf = to.id;
+    };
+    const waves = rng() < 0.4 ? 2 : 1;
+    for (let k = 0; k < waves; k++) {
+      const up = weightedPick(real.filter(c => c.tv >= 3000000), c => c.tv);
+      const lower = real.filter(c => c.tv < up.tv && c.members.length > 6);
+      if (!lower.length) continue;
+      const fromConf = pick(lower);
+      const fits = fromConf.members.map(schoolById).filter(x => (!up.needsFootball || x.fb === 'FBS') && x.prestige >= up.minPrestige - 15);
+      if (!fits.length) continue;
+      const mover = fits.sort((a, b) => (b.base + b.prestige / 2) - (a.base + a.prestige / 2))[0];
+      moveSchool(mover, up, fromConf);
+      applyRealignment();
+      if (up.members.length > 18) {
+        const weakest = up.members.map(schoolById).sort((a, b) => a.base - b.base)[0];
+        if (weakest.id !== mover.id) { moveSchool(weakest, fromConf, up); applyRealignment(); }
+      }
+    }
+    return ev;
+  }
+  // Your average team strength, the number conferences look at when they decide whom to invite.
+  function programStrength() {
+    const s = state;
+    if (!s.sports.length) return 0;
+    return s.sports.reduce((t, id) => t + teamRating(id), 0) / s.sports.length;
+  }
+  // A richer conference may come calling. Accepting skips the exit fee.
+  function maybeInvite() {
+    const s = state;
+    s.invite = null;
+    if (s.athletics.division !== 'D1' || s.athletics.transition > 0) return null;
+    const cur = conferenceOf();
+    const strength = programStrength();
+    const options = CONFERENCES.filter(c => c.real && c.tv > cur.tv && s.prestige >= c.minPrestige &&
+      (!c.needsFootball || s.sports.includes('m-football')) && strength >= median(c.members.map(id => schoolById(id).base)) - 8);
+    if (!options.length || rng() > 0.35) return null;
+    const c = options.sort((a, b) => a.tv - b.tv)[0];
+    s.invite = { conf: c.id, year: s.year + 1 };
+    return { tone: 'good', text: 'The ' + c.name + ' invited ' + s.school.name + ' to join. You can accept from the Sports tab, with no exit fee.', prestige: 0.2, buzz: 2, money: 0 };
+  }
+  function acceptInvite() {
+    const s = state;
+    if (!s.invite) return false;
+    const c = CONF_MAP.get(s.invite.conf);
+    s.athletics.conference = c.id;
+    s.invite = null;
+    log('Accepted an invitation to join the ' + c.name + '.');
+    save();
+    return true;
+  }
+  function declineInvite() {
+    state.invite = null;
+    save();
+  }
+
+  // ---------- NCAA postseason ----------
+  // Real brackets for basketball and football, seeded from every school's strength this season.
+  const TOURNEYS = {
+    'm-basketball': { name: 'NCAA Tournament', size: 64, autoBids: true, rounds: ['First Round', 'Second Round', 'Sweet 16', 'Elite Eight', 'Final Four', 'Championship'] },
+    'w-basketball': { name: 'NCAA Women’s Tournament', size: 64, autoBids: true, rounds: ['First Round', 'Second Round', 'Sweet 16', 'Elite Eight', 'Final Four', 'Championship'] },
+    'fbs': { name: 'College Football Playoff', size: 12, autoBids: 5, rounds: ['First Round', 'Quarterfinal', 'Semifinal', 'National Championship'] },
+    'fcs': { name: 'FCS Playoffs', size: 16, autoBids: 10, rounds: ['First Round', 'Second Round', 'Quarterfinal', 'Semifinal', 'National Championship'] }
+  };
+  // Standard bracket order for a power-of-two field: 1 plays the last seed, and top seeds meet as late as possible.
+  function bracketOrder(n) {
+    let order = [1];
+    while (order.length < n) {
+      const m = order.length * 2 + 1;
+      order = order.flatMap(x => [x, m - x]);
+    }
+    return order;
+  }
+  function weAreFBS() {
+    const conf = conferenceOf();
+    const fbs = conf.members.filter(id => schoolById(id).fb === 'FBS').length;
+    return conf.real && fbs >= conf.members.length / 2;
+  }
+  function runPostseason() {
+    const s = state;
+    if (s.athletics.division !== 'D1') return [];
+    const out = [];
+    const sports = [];
+    if (s.sports.includes('m-basketball')) sports.push(['m-basketball', 'm-basketball']);
+    if (s.sports.includes('w-basketball')) sports.push(['w-basketball', 'w-basketball']);
+    sports.push(['m-football', weAreFBS() ? 'fbs' : 'fcs']);
+    for (const [sportId, key] of sports) {
+      const t = TOURNEYS[key];
+      const football = sportId === 'm-football';
+      const eligible = SCHOOLS.filter(x => !football || x.fb === (key === 'fbs' ? 'FBS' : 'FCS'));
+      const rating = new Map(eligible.map(x => [x.id, opponentRating(x, sportId)]));
+      const ours = s.sports.includes(sportId) && s.standings[sportId] ? s.standings[sportId].rating : null;
+      if (ours != null && !s.athletics.transition) rating.set('you', ours);
+      // Conference champions earn automatic bids; the rest of the field goes to the strongest teams left.
+      const champs = [];
+      for (const c of CONFERENCES.filter(c => c.real)) {
+        const ids = c.members.filter(id => rating.has(id));
+        if (c.id === s.athletics.conference && rating.has('you')) ids.push('you');
+        if (!ids.length) continue;
+        const champ = c.id === s.athletics.conference && rating.has('you') && s.sportRecords[sportId] && s.sportRecords[sportId].champ
+          ? 'you' : ids.filter(id => id !== 'you').sort((a, b) => rating.get(b) - rating.get(a))[0];
+        champs.push(champ);
+      }
+      const autoCount = t.autoBids === true ? champs.length : t.autoBids;
+      const auto = champs.sort((a, b) => rating.get(b) - rating.get(a)).slice(0, autoCount);
+      const autoSet = new Set(auto);
+      const atLarge = Array.from(rating.keys()).filter(id => !autoSet.has(id)).sort((a, b) => rating.get(b) - rating.get(a)).slice(0, t.size - auto.length);
+      const field = auto.concat(atLarge).sort((a, b) => rating.get(b) - rating.get(a));
+      const seeds = new Map(field.map((id, i) => [id, i + 1]));
+      // Pad to a power of two with byes for the top seeds.
+      let n = 1; while (n < field.length) n *= 2;
+      let slots = bracketOrder(n).map(seed => field[seed - 1] || null);
+      const roundNames = t.rounds.slice(t.rounds.length - Math.log2(n));
+      const path = [];
+      let roundIdx = 0, finalFour = [];
+      while (slots.length > 1) {
+        const next = [];
+        if (slots.length === 4) finalFour = slots.filter(Boolean);
+        for (let i = 0; i < slots.length; i += 2) {
+          const a = slots[i], b = slots[i + 1];
+          if (!a || !b) { next.push(a || b); continue; }
+          const aWins = rng() < winChance(rating.get(a), rating.get(b));
+          const w = aWins ? a : b;
+          if (a === 'you' || b === 'you') path.push({ round: roundNames[roundIdx], opp: a === 'you' ? b : a, win: w === 'you' });
+          next.push(w);
+        }
+        slots = next;
+        roundIdx++;
+      }
+      const champion = slots[0];
+      const res = { sport: sportId, name: t.name, size: field.length, seed: seeds.get('you') || null, path, champion, finalFour, rounds: roundNames.length };
+      out.push(res);
+    }
+    s.postseason = { year: s.year, results: out };
+    return out;
+  }
+  // Headlines and money from your postseason runs.
+  function postseasonEvents(results) {
+    const s = state;
+    const ev = [];
+    const add = (tone, text, fx) => ev.push(Object.assign({ tone, text, prestige: 0, buzz: 0, money: 0 }, fx));
+    for (const r of results) {
+      if (!r.seed) continue;
+      const team = sportById(r.sport).name;
+      const football = r.sport === 'm-football';
+      const wins = r.path.filter(g => g.win).length;
+      const pay = football ? (r.name === 'College Football Playoff' ? [8e6, 4e6] : [300000, 200000]) : [1000000, 1500000];
+      const money = pay[0] + wins * pay[1];
+      const last = r.path[r.path.length - 1];
+      const oppName = g => (schoolById(g.opp) || { name: 'a top seed' }).name;
+      if (r.champion === 'you') add('good', team + ' won the ' + r.name + ' as the No. ' + r.seed + ' seed. National champions!', { prestige: 1.2, buzz: 10, money });
+      else if (!last) add('good', team + ' made the ' + r.name + ' as the No. ' + r.seed + ' seed.', { buzz: 2, money });
+      else if (wins >= r.rounds - 2) add('good', team + ' reached the ' + last.round + ' of the ' + r.name + ' before falling to ' + oppName(last) + '.', { prestige: 0.5, buzz: 4 + wins, money });
+      else add(wins ? 'good' : 'warn', team + ' (No. ' + r.seed + ' seed) ' + (wins ? 'won ' + wins + ' game' + (wins > 1 ? 's' : '') + ' in the ' + r.name + ' before losing to ' : 'lost in the ' + r.name + ' ' + last.round.toLowerCase() + ' to ') + oppName(last) + '.', { buzz: 1 + wins * 1.5, money });
+    }
+    return ev;
+  }
+
+  // ---------- national rankings ----------
+  // Real schools are ranked on their reputation with a little movement each year. You're scored on prestige,
+  // selectivity, outcomes, research and resources.
+  function realRankScore(x, year) {
+    return Math.min(100, x.prestige + ((hashNum(x.id + ':' + year) % 31) - 15) / 10);
+  }
+  function ourRankScore() {
+    const s = state;
+    const h = s.history[s.history.length - 1];
+    const select = h ? clamp((1 - h.acceptRate) * 110, 0, 100) : 30;
+    const yieldScore = h ? clamp(h.yieldRate * 120, 0, 100) : 40;
+    const fin = finances();
+    const resources = s.students.length ? clamp(fin.totalExp / s.students.length / 800, 0, 100) : 30;
+    const parts = [select, yieldScore, outcomeScore(), researchScore(), resources];
+    return 0.6 * s.prestige + 0.4 * parts.reduce((t, v) => t + v, 0) / parts.length;
+  }
+  // The table for a given year. Pass your published score to reproduce a past list exactly.
+  function nationalRankings(year, ours) {
+    const s = state;
+    year = year || s.year;
+    const rows = SCHOOLS.map(x => ({ id: x.id, score: realRankScore(x, year) }));
+    rows.push({ id: 'you', score: ours != null ? ours : ourRankScore() });
+    return rows.sort((a, b) => b.score - a.score);
+  }
+  function publishRankings() {
+    const s = state;
+    const rows = nationalRankings();
+    const rank = rows.findIndex(r => r.id === 'you') + 1;
+    const prev = s.rankings.length ? s.rankings[s.rankings.length - 1].rank : null;
+    s.rankings.push({ year: s.year, rank, score: Math.round(rows[rank - 1].score * 10) / 10 });
+    if (s.rankings.length > 60) s.rankings.shift();
+    const ev = [];
+    const marks = [10, 25, 50, 100];
+    const crossed = prev != null ? marks.find(m => rank <= m && prev > m) : null;
+    if (crossed) ev.push({ tone: 'good', text: s.school.name + ' broke into the top ' + crossed + ' of the national rankings at No. ' + rank + '.', prestige: 0.3, buzz: crossed <= 25 ? 6 : 4, money: 0 });
+    else if (prev != null && prev - rank >= 10) ev.push({ tone: 'good', text: s.school.name + ' climbed ' + (prev - rank) + ' spots to No. ' + rank + ' in the national rankings.', prestige: 0, buzz: 2, money: 0 });
+    else if (prev != null && rank - prev >= 10) ev.push({ tone: 'bad', text: s.school.name + ' fell ' + (rank - prev) + ' spots to No. ' + rank + ' in the national rankings.', prestige: 0, buzz: -2, money: 0 });
+    return { rank, prev, events: ev };
+  }
+  function currentRank() {
+    const r = state.rankings;
+    return r.length ? r[r.length - 1].rank : null;
+  }
+
+  // ---------- graduate schools & research ----------
+  const GRAD_MAP = new Map(D.GRAD_PROGRAMS.map(g => [g.id, g]));
+  const gradById = id => GRAD_MAP.get(id);
+  function gradCheck(id) {
+    const s = state, g = gradById(id);
+    const reasons = [];
+    if (s.grad.some(x => x.id === id)) reasons.push('Already open.');
+    if (s.prestige < g.minPrestige) reasons.push('Needs prestige ' + g.minPrestige + '.');
+    if (!g.needs.some(m => s.majors.includes(m))) reasons.push('Needs one of these majors: ' + g.needs.map(m => majorById(m).name).join(', ') + '.');
+    if (s.budget < g.cost) reasons.push('Costs ' + Math.round(g.cost / 1e6) + 'M to open.');
+    return { ok: !reasons.length, reasons };
+  }
+  function openGrad(id) {
+    const chk = gradCheck(id);
+    if (!chk.ok) return chk;
+    const g = gradById(id);
+    state.budget -= g.cost;
+    state.grad.push({ id, opened: state.year, students: 0 });
+    log('Opened the ' + g.name + '.');
+    save();
+    return chk;
+  }
+  function closeGrad(id) {
+    const g = gradById(id);
+    state.grad = state.grad.filter(x => x.id !== id);
+    log('Closed the ' + g.name + '.');
+    save();
+  }
+  function gradStudents() { return state.grad.reduce((t, x) => t + x.students, 0); }
+  // Research grows with your graduate schools and with prestige. Undergraduate-only schools sit at a teaching baseline.
+  function researchPoints() { return state.grad.reduce((t, x) => t + gradById(x.id).research * Math.min(1, x.students / gradById(x.id).capacity + 0.3), 0); }
+  function researchScore() { return clamp(35 + researchPoints() * 2.6, 0, 100); }
+  function researchGrants() { return Math.round(researchPoints() * Math.pow(state.prestige / 100, 2) * 6e6); }
+  function growGrad() {
+    const s = state;
+    for (const x of s.grad) {
+      const g = gradById(x.id);
+      x.students = Math.min(g.capacity, Math.round(x.students + g.capacity * 0.35 * (0.5 + s.prestige / 100)));
+    }
+  }
+
+  // ---------- famous alumni ----------
+  // At graduation a few students are marked for fame. Years later it happens, and the school hears about it.
+  function fameChance(st) {
+    let p = 0.012 + (st.hook && st.hook !== 'trouble' ? 0.06 : 0) + ((st.idx || 0) >= 90 ? 0.02 : 0);
+    return p * (0.5 + state.prestige / 100);
+  }
+  function destineGraduate(st) {
+    const s = state;
+    const grads = s.grad.map(x => x.id);
+    const fits = D.CAREERS.filter(c => (st.idx || 0) >= c.minIdx && (c.majors.includes(st.major) || c.majors.some(m => grads.includes(m))));
+    if (!fits.length) return null;
+    const c = weightedPick(fits, x => x.w);
+    return { name: st.name, classOf: st.classOf, major: st.major, state: st.region, career: c.id, year: s.year + randInt(c.delay[0], c.delay[1]) };
+  }
+  // The school already has alumni out in the world; a few of them hit it big in the years ahead.
+  function seedLegacyStars() {
+    const s = state;
+    for (let i = 0; i < 8; i++) {
+      const female = rng() < 0.5;
+      const st = {
+        name: pick(female ? D.FEMALE_NAMES : D.MALE_NAMES) + ' ' + pick(D.LAST_NAMES),
+        classOf: s.year - randInt(5, 30), major: pick(s.majors), region: s.school.state, idx: randInt(55, 95)
+      };
+      const f = destineGraduate(st);
+      if (f) { f.year = s.year + randInt(1, 20); s.futureStars.push(f); }
+    }
+  }
+  function fameEvents() {
+    const s = state;
+    const ev = [];
+    const due = s.futureStars.filter(f => f.year <= s.year);
+    s.futureStars = s.futureStars.filter(f => f.year > s.year);
+    for (const f of due) {
+      const c = D.CAREERS.find(x => x.id === f.career);
+      if (!c) continue;
+      const gift = c.fx.gift ? roundTo(rand(c.fx.gift[0], c.fx.gift[1]), 500000) : 0;
+      const text = c.text.replace('{name}', f.name).replace('{yy}', shortYear(f.classOf)).replace('{state}', (stateByCode(f.state) || { name: 'their home state' }).name)
+        .replace('{gift}', '$' + gift.toLocaleString());
+      ev.push({ tone: 'good', text, prestige: c.fx.prestige || 0, buzz: c.fx.buzz || 0, money: gift });
+      s.famousAlumni.unshift({ name: f.name, classOf: f.classOf, major: f.major, career: c.label, year: s.year });
+    }
+    if (s.famousAlumni.length > 120) s.famousAlumni.length = 120;
+    return ev;
+  }
+  // Star athletes go pro as soon as they graduate.
+  function draftEvent(st) {
+    const league = D.DRAFTS[st.sport];
+    if (!league || !state.sports.includes(st.sport) || st.stars < 4) return null;
+    const odds = (st.stars === 5 ? 0.5 : 0.12) * (st.hook === 'olympian' ? 1.6 : 1) * (state.athletics.division === 'D1' ? 1 : 0.35);
+    if (rng() > odds) return null;
+    const round = st.stars === 5 && rng() < 0.5 ? 'first round' : 'later rounds';
+    state.famousAlumni.unshift({ name: st.name, classOf: st.classOf, major: st.major, career: 'Drafted (' + league + ')', year: state.year });
+    const article = /^[AEFHILMNORSX][A-Z]/.test(league) ? 'an' : 'a';
+    return { tone: 'good', text: st.name + ' ' + shortYear(st.classOf) + ' (' + sportById(st.sport).name + ') was drafted in the ' + round + ' by ' + article + ' ' + league + ' team.', prestige: 0.1, buzz: round === 'first round' ? 3 : 1, money: 0 };
   }
 
   // ---------- classes ----------
@@ -1242,6 +1577,12 @@
       { label: 'Recruiting & marketing', amount: rec.marketing + rec.athletics + rec.states.length * D.RECRUITING.stateCost + rec.countries.length * D.RECRUITING.countryCost }
     ];
     if (div.schol) expenses.push({ label: 'Athletic scholarships', amount: scholarshipAthletes * div.schol });
+    if (s.grad.length) {
+      // Graduate students get assistantships and scholarships too: about half of sticker tuition comes in.
+      revenue.push({ label: 'Graduate tuition (after aid)', amount: Math.round(s.grad.reduce((t, x) => t + x.students * gradById(x.id).tuition, 0) * 0.5) });
+      revenue.push({ label: 'Research grants', amount: researchGrants() });
+      expenses.push({ label: 'Graduate & professional schools', amount: s.grad.reduce((t, x) => t + gradById(x.id).upkeep, 0) });
+    }
     if (s.greek.length) expenses.push({ label: 'Greek life office & houses', amount: greekCost });
     const totalRev = revenue.reduce((x, l) => x + l.amount, 0);
     const totalExp = expenses.reduce((x, l) => x + l.amount, 0);
@@ -1310,7 +1651,7 @@
         recruits: rosterFor(id).length, place, teams: rows.length, champ: place === 1 && rows.length > 1
       };
       s.sportRecords[id] = rec;
-      s.standings[id] = { conf: conf.id, rows: rows.map(x => [x.id, x.w, x.l]), games: games.filter(g => g.conf).map(g => [g.opp, g.win ? 1 : 0]) };
+      s.standings[id] = { conf: conf.id, rating: Math.round(ours * 10) / 10, rows: rows.map(x => [x.id, x.w, x.l]), games: games.filter(g => g.conf).map(g => [g.opp, g.win ? 1 : 0]) };
       results.push({ id, name: sp.name, ...rec });
     }
     return results;
@@ -1497,6 +1838,8 @@
     const lifeBonus = (m0.life.score - 50) / 2000;
     const stay = [];
     const grads = [];
+    // A graduating class produces only a handful of future stars, however big it is.
+    let starSlots = 2 + Math.round(m0.byYear[3] / 250);
     let newAlumni = 0;
     for (const st of s.students) {
       let dropRate = 0.03 + (coverage < 1 ? (1 - coverage) * 0.15 : 0);
@@ -1516,6 +1859,12 @@
         newAlumni++;
         const career = careerFor(st);
         grads.push({ major: st.major, placed: career.placed, salary: career.salary });
+        if (starSlots > 0 && rng() < fameChance(st)) {
+          const f = destineGraduate(st);
+          if (f) { s.futureStars.push(f); starSlots--; }
+        }
+        const drafted = draftEvent(st);
+        if (drafted) rep.events.push(drafted);
         s.alumniGiving += givingFor(st, career.salary);
         if (st.hook && st.hook !== 'trouble') {
           s.notableAlumni.unshift({ name: st.name, classOf: st.classOf, hook: st.hook, major: st.major });
@@ -1587,8 +1936,15 @@
     invalidate();
     const m = metrics();
 
-    // 7. Campus news driven by the students you admitted, plus the athletic season.
-    rep.events = rep.events.concat(campusEvents(m), athleticsEvents(rep.sports));
+    // 7. Campus news driven by the students you admitted, the athletic season, the postseason,
+    //    famous alumni, and conference shake-ups.
+    rep.postseason = runPostseason();
+    rep.events = rep.events.concat(campusEvents(m), athleticsEvents(rep.sports), postseasonEvents(rep.postseason), fameEvents());
+    if (s.athletics.division === 'D1' && s.year >= s.startYear + 2 && rng() < 0.25) rep.events = rep.events.concat(realignmentWave());
+    const invite = maybeInvite();
+    if (invite) rep.events.push(invite);
+    if (s.futureStars.length > 500) s.futureStars.length = 500;
+    growGrad();
     // A big school makes more news, but each headline matters less: yearly effects level off.
     const evPrestige = clamp(rep.events.reduce((x, e) => x + e.prestige, 0), -2, 2);
     const evBuzz = 15 * Math.tanh(rep.events.reduce((x, e) => x + e.buzz, 0) / 15);
@@ -1613,13 +1969,14 @@
     const winPct = games ? rep.sports.reduce((x, r) => x + r.w, 0) / games : 0.4;
     // A tiny class isn't selective, it's empty: scale the academic credit by how full the class is.
     const fill = Math.min(1, rep.enrolled / Math.max(1, s.targetClass));
-    const target = 0.3 * incomingIdx * (0.5 + 0.5 * fill)
-      + 0.11 * Math.min(100, s.majors.length * 4)
-      + 0.11 * Math.min(100, coverage * 100)
-      + 0.11 * classQuality() * 100
-      + 0.11 * winPct * 100
-      + 0.16 * m.life.score
-      + 0.1 * outcomeScore();
+    const target = 0.28 * incomingIdx * (0.5 + 0.5 * fill)
+      + 0.1 * Math.min(100, s.majors.length * 4)
+      + 0.1 * Math.min(100, coverage * 100)
+      + 0.1 * classQuality() * 100
+      + 0.1 * winPct * 100
+      + 0.14 * m.life.score
+      + 0.1 * outcomeScore()
+      + 0.08 * researchScore();
     s.prestige = Math.round(clamp(s.prestige + (target - s.prestige) * 0.25 + evPrestige, 1, 99) * 10) / 10;
     rep.prestigeAfter = s.prestige;
     rep.eventPrestige = evPrestige;
@@ -1641,6 +1998,16 @@
       gradRate: grads.length ? rep.outcome.gradRate : null, salary: grads.length ? rep.outcome.salary : null,
       students: s.students.length, prestige: s.prestige, budget: s.budget, net: fin.net
     });
+    // National rankings come out once the year's numbers are in.
+    const ranked = publishRankings();
+    rep.rank = ranked.rank;
+    rep.rankBefore = ranked.prev;
+    s.history[s.history.length - 1].rank = ranked.rank;
+    for (const e of ranked.events) {
+      rep.events.push(e);
+      s.buzz = Math.round((s.buzz + e.buzz) * 10) / 10;
+      s.prestige = Math.round(clamp(s.prestige + e.prestige, 1, 99) * 10) / 10;
+    }
     log('Class of ' + (s.year + 4) + ' enrolled: ' + rep.enrolled + ' freshmen from ' + rep.applied.toLocaleString() + ' applicants.', s.year);
     if (rep.graduated) log(rep.graduated + ' seniors graduated.', s.year);
     if (rep.dropped) log(rep.dropped + ' students left before finishing.', s.year);
@@ -1664,7 +2031,7 @@
   function newGame(settings) {
     const cfg = START[settings.type];
     state = {
-      version: 6,
+      version: 7,
       school: {
         name: settings.name, mascot: settings.mascot,
         primary: settings.primary, secondary: settings.secondary,
@@ -1698,7 +2065,8 @@
       lastReport: null
     };
     Object.assign(state, officeDefaults(settings.type));
-    state.version = 6;
+    state.version = 7;
+    applyRealignment();
     invalidate();
     for (const m of STARTER_MAJORS) {
       addClass(m, 0, 'standard', true);
@@ -1729,6 +2097,8 @@
     playSports();
     invalidate();
     generateApplicants();
+    publishRankings();
+    seedLegacyStars();
     log('Welcome to ' + settings.name + '. The ' + START_YEAR + ' admissions cycle is open.');
     saveNow();
     return state;
@@ -1843,6 +2213,7 @@
       if (!raw) raw = localStorage.getItem(OLD_SAVE_KEY);
       if (!raw) return null;
       state = migrate(hydrate(raw));
+      applyRealignment();
       invalidate();
       if (state.stalePool) {
         delete state.stalePool;
@@ -1871,14 +2242,26 @@
 
   // Bring a save from an earlier version of the game up to date, one version at a time.
   function migrate(st) {
-    if (st.version >= 6) return st;
+    if (st.version >= 7) return st;
     state = st;
     if (!(st.version >= 2)) migrateTo2(st);
     if (st.version < 3) migrateTo3(st);
     if (st.version < 4) migrateTo4(st);
     if (st.version < 5) migrateTo5(st);
-    migrateTo6(st);
+    if (st.version < 6) migrateTo6(st);
+    migrateTo7(st);
     return st;
+  }
+
+  // Version 7 added rankings, postseason brackets, realignment, graduate schools and famous alumni.
+  function migrateTo7(st) {
+    const d = officeDefaults(st.school.type);
+    for (const k of ['realign', 'invite', 'postseason', 'rankings', 'grad', 'futureStars', 'famousAlumni']) if (st[k] === undefined) st[k] = d[k];
+    st.version = 7;
+    applyRealignment();
+    invalidate();
+    publishRankings();
+    seedLegacyStars();
   }
 
   // Version 6 swapped the made-up Division I leagues for the real conferences and their schools.
@@ -1990,7 +2373,7 @@
 
   window.Game = {
     get state() { return state; },
-    set state(v) { state = v; invalidate(); },
+    set state(v) { state = v; if (v) applyRealignment(); invalidate(); },
     get saveOk() { return saveOk; },
     SEATS_PER_STUDENT, COURSE_NUMBERS, DINING_PER_RESIDENT,
     majorById, sportById, deptById, stateByCode, courseCode, tagsOf,
@@ -2006,7 +2389,8 @@
     finances, endSeason, randomSchoolName, pick,
     isEarly, visibleApplicants, isLocked, holdDecision, setDecision, releaseEarly, edCommitChance, expectedFreshmen, setEarlyPrograms,
     staffCapacity, staffRemaining, setReaders, setStaffRule, staffRead, setRecruit, toggleCampaign,
-    SCHOOLS, CONFERENCES, schoolById, defaultConference, competitorsFor, topCompetitor, prestigeRank, rivalFor, teamRating,
+    SCHOOLS, CONFERENCES, schoolById, defaultConference, TOURNEYS, nationalRankings, currentRank, ourRankScore,
+    acceptInvite, declineInvite, programStrength, gradById, gradCheck, openGrad, closeGrad, gradStudents, researchScore, researchGrants, researchPoints, competitorsFor, topCompetitor, prestigeRank, rivalFor, teamRating,
     outcomeScore, majorOutcome, conferenceOf, titleIX, titleIXGap, divisionCheck, changeDivision, conferenceCheck, joinConference
   };
 })();

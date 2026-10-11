@@ -781,3 +781,46 @@ input[type="color"] { width: 40px; height: 30px; padding: 0; border: 1px solid v
 .lost-list { display: flex; flex-wrap: wrap; gap: .4rem .5rem; align-items: center; }
 .bars .bar-label .school { max-width: 100%; }
 .conf-list { max-height: 420px; overflow-y: auto; padding-right: .25rem; }
+
+/* ---------- charts ---------- */
+.charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem 1.5rem; }
+.chart { position: relative; margin: 0; min-width: 0; }
+.chart figcaption { font-size: var(--step--1); color: var(--muted); display: flex; justify-content: space-between; gap: .5rem; }
+.chart figcaption b { color: var(--ink); font-family: var(--font-mono); }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .line { fill: none; stroke: var(--c1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .dot, .chart .hover-dot { fill: var(--c1); stroke: var(--paper); stroke-width: 2; }
+.chart .axis { fill: var(--muted); font-size: 10px; font-family: var(--font-mono); }
+.chart .cross, .chart .hover-dot { visibility: hidden; }
+.chart .cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart.is-hover .cross, .chart.is-hover .hover-dot { visibility: visible; }
+.chart-tip { position: absolute; top: 1.4rem; transform: translateX(-50%); padding: .15rem .45rem; border-radius: 4px; background: var(--ink); color: var(--bg); font-size: .72rem; font-family: var(--font-mono); white-space: nowrap; pointer-events: none; }
+.chart:not(.is-hover) .chart-tip { display: none; }
+.chart-empty { padding: 1.5rem 0; }
+
+/* ---------- postseason ---------- */
+.postseason { display: grid; gap: .9rem; }
+.ps-item .sub { margin-top: 0; }
+.ps-final { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; margin-top: .4rem; }
+.member.is-champ { border-color: var(--c5); background: color-mix(in srgb, var(--c5) 14%, var(--paper)); font-weight: 600; }
+
+/* ---------- motion: brief and only on arrival ---------- */
+@keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes modal-in { from { opacity: 0; transform: translate(-50%, -48%) scale(.98); } to { opacity: 1; transform: translate(-50%, -50%); } }
+@keyframes drawer-in { from { opacity: .4; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes draw-line { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.panel-enter > * { animation: fade-up .22s ease-out both; }
+.modal { animation: modal-in .2s ease-out both; }
+.scrim-modal { animation: scrim-in .2s ease-out both; }
+.drawer-enter { animation: drawer-in .22s ease-out both; }
+.panel-enter .bar-fill, .modal .bar-fill { transform-origin: left center; animation: grow-x .5s ease-out both; }
+.panel-enter .chart .line { stroke-dasharray: 1; animation: draw-line .8s ease-out both; }
+.modal .events li { animation: fade-up .3s ease-out both; animation-delay: calc(var(--i, 0) * 45ms + .1s); }
+.panel-enter .meter span { transform-origin: left center; animation: grow-x .5s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .panel-enter > *, .modal, .scrim-modal, .drawer-enter, .panel-enter .bar-fill, .modal .bar-fill,
+  .panel-enter .chart .line, .modal .events li, .panel-enter .meter span { animation: none; }
+}
