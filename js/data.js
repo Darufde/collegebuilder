@@ -2,67 +2,162 @@
 (function () {
   'use strict';
 
-  // [code, name, cities]. The number of cities doubles as a rough population weight.
+  // [code, name, population in millions (weights where applicants come from), cities]
   const STATES = [
-    ['AL', 'Alabama', ['Birmingham', 'Huntsville', 'Mobile']],
-    ['AK', 'Alaska', ['Anchorage', 'Fairbanks']],
-    ['AZ', 'Arizona', ['Phoenix', 'Tucson', 'Flagstaff']],
-    ['AR', 'Arkansas', ['Little Rock', 'Fayetteville']],
-    ['CA', 'California', ['Los Angeles', 'San Diego', 'Sacramento', 'Fresno', 'San Jose', 'Oakland']],
-    ['CO', 'Colorado', ['Denver', 'Boulder', 'Colorado Springs']],
-    ['CT', 'Connecticut', ['Hartford', 'New Haven', 'Stamford']],
-    ['DE', 'Delaware', ['Wilmington', 'Dover']],
-    ['FL', 'Florida', ['Miami', 'Tampa', 'Orlando', 'Jacksonville', 'Tallahassee']],
-    ['GA', 'Georgia', ['Atlanta', 'Savannah', 'Athens', 'Macon']],
-    ['HI', 'Hawaii', ['Honolulu', 'Hilo']],
-    ['ID', 'Idaho', ['Boise', 'Idaho Falls']],
-    ['IL', 'Illinois', ['Chicago', 'Springfield', 'Naperville', 'Peoria']],
-    ['IN', 'Indiana', ['Indianapolis', 'Bloomington', 'Fort Wayne']],
-    ['IA', 'Iowa', ['Des Moines', 'Iowa City', 'Cedar Rapids']],
-    ['KS', 'Kansas', ['Wichita', 'Lawrence', 'Topeka']],
-    ['KY', 'Kentucky', ['Louisville', 'Lexington', 'Bowling Green']],
-    ['LA', 'Louisiana', ['New Orleans', 'Baton Rouge', 'Shreveport']],
-    ['ME', 'Maine', ['Portland', 'Bangor']],
-    ['MD', 'Maryland', ['Baltimore', 'Annapolis', 'Bethesda']],
-    ['MA', 'Massachusetts', ['Boston', 'Worcester', 'Cambridge', 'Springfield']],
-    ['MI', 'Michigan', ['Detroit', 'Ann Arbor', 'Grand Rapids', 'Lansing']],
-    ['MN', 'Minnesota', ['Minneapolis', 'St. Paul', 'Duluth']],
-    ['MS', 'Mississippi', ['Jackson', 'Oxford']],
-    ['MO', 'Missouri', ['St. Louis', 'Kansas City', 'Columbia']],
-    ['MT', 'Montana', ['Billings', 'Missoula', 'Bozeman']],
-    ['NE', 'Nebraska', ['Omaha', 'Lincoln']],
-    ['NV', 'Nevada', ['Las Vegas', 'Reno', 'Henderson']],
-    ['NH', 'New Hampshire', ['Manchester', 'Concord']],
-    ['NJ', 'New Jersey', ['Newark', 'Princeton', 'Jersey City', 'Trenton']],
-    ['NM', 'New Mexico', ['Albuquerque', 'Santa Fe', 'Las Cruces']],
-    ['NY', 'New York', ['New York City', 'Buffalo', 'Rochester', 'Albany', 'Syracuse']],
-    ['NC', 'North Carolina', ['Charlotte', 'Raleigh', 'Durham', 'Asheville']],
-    ['ND', 'North Dakota', ['Fargo', 'Bismarck']],
-    ['OH', 'Ohio', ['Columbus', 'Cleveland', 'Cincinnati', 'Dayton']],
-    ['OK', 'Oklahoma', ['Oklahoma City', 'Tulsa', 'Norman']],
-    ['OR', 'Oregon', ['Portland', 'Eugene', 'Salem']],
-    ['PA', 'Pennsylvania', ['Philadelphia', 'Pittsburgh', 'State College', 'Allentown']],
-    ['RI', 'Rhode Island', ['Providence', 'Newport']],
-    ['SC', 'South Carolina', ['Charleston', 'Columbia', 'Greenville']],
-    ['SD', 'South Dakota', ['Sioux Falls', 'Rapid City']],
-    ['TN', 'Tennessee', ['Nashville', 'Memphis', 'Knoxville', 'Chattanooga']],
-    ['TX', 'Texas', ['Houston', 'Austin', 'Dallas', 'San Antonio', 'El Paso', 'Fort Worth']],
-    ['UT', 'Utah', ['Salt Lake City', 'Provo', 'Ogden']],
-    ['VT', 'Vermont', ['Burlington', 'Montpelier']],
-    ['VA', 'Virginia', ['Richmond', 'Arlington', 'Norfolk', 'Charlottesville']],
-    ['WA', 'Washington', ['Seattle', 'Spokane', 'Tacoma']],
-    ['WV', 'West Virginia', ['Charleston', 'Morgantown']],
-    ['WI', 'Wisconsin', ['Milwaukee', 'Madison', 'Green Bay']],
-    ['WY', 'Wyoming', ['Cheyenne', 'Casper', 'Laramie']]
-  ].map(([code, name, cities]) => ({ code, name, cities }));
+    ['AL', 'Alabama', 5.0, ['Birmingham', 'Huntsville', 'Mobile', 'Montgomery', 'Tuscaloosa', 'Auburn']],
+    ['AK', 'Alaska', 0.7, ['Anchorage', 'Fairbanks', 'Juneau', 'Wasilla']],
+    ['AZ', 'Arizona', 7.2, ['Phoenix', 'Tucson', 'Flagstaff', 'Mesa', 'Scottsdale', 'Tempe', 'Chandler', 'Yuma']],
+    ['AR', 'Arkansas', 3.0, ['Little Rock', 'Fayetteville', 'Fort Smith', 'Jonesboro', 'Bentonville', 'Conway']],
+    ['CA', 'California', 39.0, ['Los Angeles', 'San Diego', 'Sacramento', 'Fresno', 'San Jose', 'Oakland', 'San Francisco', 'Long Beach', 'Bakersfield', 'Irvine', 'Riverside', 'Santa Barbara', 'Pasadena', 'Stockton']],
+    ['CO', 'Colorado', 5.8, ['Denver', 'Boulder', 'Colorado Springs', 'Fort Collins', 'Aurora', 'Pueblo', 'Grand Junction']],
+    ['CT', 'Connecticut', 3.6, ['Hartford', 'New Haven', 'Stamford', 'Bridgeport', 'Waterbury', 'Greenwich']],
+    ['DE', 'Delaware', 1.0, ['Wilmington', 'Dover', 'Newark', 'Lewes']],
+    ['DC', 'District of Columbia', 0.7, ['Washington']],
+    ['FL', 'Florida', 22.0, ['Miami', 'Tampa', 'Orlando', 'Jacksonville', 'Tallahassee', 'Gainesville', 'Fort Lauderdale', 'St. Petersburg', 'Pensacola', 'Sarasota', 'Boca Raton']],
+    ['GA', 'Georgia', 10.9, ['Atlanta', 'Savannah', 'Athens', 'Macon', 'Augusta', 'Columbus', 'Marietta', 'Valdosta']],
+    ['HI', 'Hawaii', 1.4, ['Honolulu', 'Hilo', 'Kailua', 'Kahului']],
+    ['ID', 'Idaho', 1.9, ['Boise', 'Idaho Falls', 'Pocatello', 'Coeur d’Alene', 'Nampa']],
+    ['IL', 'Illinois', 12.6, ['Chicago', 'Springfield', 'Naperville', 'Peoria', 'Rockford', 'Champaign', 'Evanston', 'Aurora', 'Joliet']],
+    ['IN', 'Indiana', 6.8, ['Indianapolis', 'Bloomington', 'Fort Wayne', 'South Bend', 'Evansville', 'Carmel', 'West Lafayette']],
+    ['IA', 'Iowa', 3.2, ['Des Moines', 'Iowa City', 'Cedar Rapids', 'Davenport', 'Ames', 'Sioux City']],
+    ['KS', 'Kansas', 2.9, ['Wichita', 'Lawrence', 'Topeka', 'Overland Park', 'Manhattan', 'Olathe']],
+    ['KY', 'Kentucky', 4.5, ['Louisville', 'Lexington', 'Bowling Green', 'Owensboro', 'Covington', 'Frankfort']],
+    ['LA', 'Louisiana', 4.6, ['New Orleans', 'Baton Rouge', 'Shreveport', 'Lafayette', 'Lake Charles', 'Monroe']],
+    ['ME', 'Maine', 1.4, ['Portland', 'Bangor', 'Lewiston', 'Augusta', 'Bar Harbor']],
+    ['MD', 'Maryland', 6.2, ['Baltimore', 'Annapolis', 'Bethesda', 'Silver Spring', 'Columbia', 'Frederick', 'Rockville']],
+    ['MA', 'Massachusetts', 7.0, ['Boston', 'Worcester', 'Cambridge', 'Springfield', 'Lowell', 'Newton', 'Amherst', 'Plymouth']],
+    ['MI', 'Michigan', 10.0, ['Detroit', 'Ann Arbor', 'Grand Rapids', 'Lansing', 'Flint', 'Kalamazoo', 'Traverse City', 'Dearborn']],
+    ['MN', 'Minnesota', 5.7, ['Minneapolis', 'St. Paul', 'Duluth', 'Rochester', 'Bloomington', 'St. Cloud']],
+    ['MS', 'Mississippi', 2.9, ['Jackson', 'Oxford', 'Gulfport', 'Hattiesburg', 'Tupelo', 'Starkville']],
+    ['MO', 'Missouri', 6.2, ['St. Louis', 'Kansas City', 'Columbia', 'Springfield', 'Independence', 'Joplin']],
+    ['MT', 'Montana', 1.1, ['Billings', 'Missoula', 'Bozeman', 'Great Falls', 'Helena']],
+    ['NE', 'Nebraska', 2.0, ['Omaha', 'Lincoln', 'Grand Island', 'Kearney', 'Bellevue']],
+    ['NV', 'Nevada', 3.2, ['Las Vegas', 'Reno', 'Henderson', 'Carson City', 'Elko']],
+    ['NH', 'New Hampshire', 1.4, ['Manchester', 'Concord', 'Nashua', 'Portsmouth', 'Hanover']],
+    ['NJ', 'New Jersey', 9.3, ['Newark', 'Princeton', 'Jersey City', 'Trenton', 'Hoboken', 'Paterson', 'Camden', 'Edison', 'Toms River']],
+    ['NM', 'New Mexico', 2.1, ['Albuquerque', 'Santa Fe', 'Las Cruces', 'Roswell', 'Taos']],
+    ['NY', 'New York', 19.6, ['New York City', 'Buffalo', 'Rochester', 'Albany', 'Syracuse', 'Brooklyn', 'Yonkers', 'Ithaca', 'White Plains', 'Long Island', 'Schenectady', 'Binghamton']],
+    ['NC', 'North Carolina', 10.8, ['Charlotte', 'Raleigh', 'Durham', 'Asheville', 'Greensboro', 'Wilmington', 'Chapel Hill', 'Winston-Salem', 'Fayetteville']],
+    ['ND', 'North Dakota', 0.8, ['Fargo', 'Bismarck', 'Grand Forks', 'Minot']],
+    ['OH', 'Ohio', 11.8, ['Columbus', 'Cleveland', 'Cincinnati', 'Dayton', 'Toledo', 'Akron', 'Youngstown', 'Athens', 'Canton']],
+    ['OK', 'Oklahoma', 4.0, ['Oklahoma City', 'Tulsa', 'Norman', 'Stillwater', 'Edmond', 'Lawton']],
+    ['OR', 'Oregon', 4.2, ['Portland', 'Eugene', 'Salem', 'Bend', 'Corvallis', 'Medford']],
+    ['PA', 'Pennsylvania', 13.0, ['Philadelphia', 'Pittsburgh', 'State College', 'Allentown', 'Erie', 'Harrisburg', 'Scranton', 'Lancaster', 'Bethlehem']],
+    ['PR', 'Puerto Rico', 3.2, ['San Juan', 'Ponce', 'Mayagüez', 'Bayamón', 'Caguas']],
+    ['RI', 'Rhode Island', 1.1, ['Providence', 'Newport', 'Warwick', 'Cranston']],
+    ['SC', 'South Carolina', 5.3, ['Charleston', 'Columbia', 'Greenville', 'Myrtle Beach', 'Spartanburg', 'Rock Hill']],
+    ['SD', 'South Dakota', 0.9, ['Sioux Falls', 'Rapid City', 'Aberdeen', 'Brookings']],
+    ['TN', 'Tennessee', 7.0, ['Nashville', 'Memphis', 'Knoxville', 'Chattanooga', 'Murfreesboro', 'Clarksville', 'Franklin']],
+    ['TX', 'Texas', 30.0, ['Houston', 'Austin', 'Dallas', 'San Antonio', 'El Paso', 'Fort Worth', 'Plano', 'Lubbock', 'Corpus Christi', 'Arlington', 'Laredo', 'McAllen', 'Waco', 'College Station']],
+    ['UT', 'Utah', 3.4, ['Salt Lake City', 'Provo', 'Ogden', 'St. George', 'Logan', 'Orem']],
+    ['VT', 'Vermont', 0.6, ['Burlington', 'Montpelier', 'Rutland', 'Brattleboro']],
+    ['VA', 'Virginia', 8.7, ['Richmond', 'Arlington', 'Norfolk', 'Charlottesville', 'Virginia Beach', 'Alexandria', 'Roanoke', 'Blacksburg']],
+    ['WA', 'Washington', 7.8, ['Seattle', 'Spokane', 'Tacoma', 'Bellevue', 'Olympia', 'Vancouver', 'Bellingham', 'Yakima']],
+    ['WV', 'West Virginia', 1.8, ['Charleston', 'Morgantown', 'Huntington', 'Wheeling', 'Parkersburg']],
+    ['WI', 'Wisconsin', 5.9, ['Milwaukee', 'Madison', 'Green Bay', 'Kenosha', 'Eau Claire', 'Appleton', 'La Crosse']],
+    ['WY', 'Wyoming', 0.6, ['Cheyenne', 'Casper', 'Laramie', 'Jackson', 'Sheridan']]
+  ].map(([code, name, pop, cities]) => ({ code, name, pop, cities }));
 
+  // International hometowns. Bigger senders list more cities. Students from abroad get names from their own country.
   const INTERNATIONAL = [
-    ['Toronto', 'Canada'], ['Vancouver', 'Canada'], ['Mexico City', 'Mexico'],
-    ['London', 'United Kingdom'], ['Seoul', 'South Korea'], ['Mumbai', 'India'],
-    ['Bengaluru', 'India'], ['Lagos', 'Nigeria'], ['São Paulo', 'Brazil'],
-    ['Shanghai', 'China'], ['Berlin', 'Germany'], ['Manila', 'Philippines'],
-    ['Sydney', 'Australia'], ['Nairobi', 'Kenya'], ['Hanoi', 'Vietnam']
+    ['Toronto', 'Canada'], ['Vancouver', 'Canada'], ['Montreal', 'Canada'], ['Calgary', 'Canada'], ['Ottawa', 'Canada'], ['Edmonton', 'Canada'],
+    ['Mexico City', 'Mexico'], ['Guadalajara', 'Mexico'], ['Monterrey', 'Mexico'], ['Puebla', 'Mexico'], ['Mérida', 'Mexico'],
+    ['London', 'United Kingdom'], ['Manchester', 'United Kingdom'], ['Edinburgh', 'United Kingdom'], ['Birmingham', 'United Kingdom'], ['Bristol', 'United Kingdom'], ['Glasgow', 'United Kingdom'],
+    ['Seoul', 'South Korea'], ['Busan', 'South Korea'], ['Incheon', 'South Korea'], ['Daegu', 'South Korea'],
+    ['Mumbai', 'India'], ['Bengaluru', 'India'], ['Delhi', 'India'], ['Chennai', 'India'], ['Hyderabad', 'India'], ['Pune', 'India'], ['Kolkata', 'India'], ['Ahmedabad', 'India'],
+    ['Lagos', 'Nigeria'], ['Abuja', 'Nigeria'], ['Port Harcourt', 'Nigeria'], ['Ibadan', 'Nigeria'],
+    ['São Paulo', 'Brazil'], ['Rio de Janeiro', 'Brazil'], ['Brasília', 'Brazil'], ['Belo Horizonte', 'Brazil'], ['Recife', 'Brazil'],
+    ['Shanghai', 'China'], ['Beijing', 'China'], ['Shenzhen', 'China'], ['Guangzhou', 'China'], ['Hangzhou', 'China'], ['Chengdu', 'China'], ['Nanjing', 'China'], ['Wuhan', 'China'],
+    ['Berlin', 'Germany'], ['Munich', 'Germany'], ['Hamburg', 'Germany'], ['Frankfurt', 'Germany'], ['Cologne', 'Germany'],
+    ['Manila', 'Philippines'], ['Cebu', 'Philippines'], ['Davao', 'Philippines'], ['Quezon City', 'Philippines'],
+    ['Sydney', 'Australia'], ['Melbourne', 'Australia'], ['Brisbane', 'Australia'], ['Perth', 'Australia'],
+    ['Nairobi', 'Kenya'], ['Mombasa', 'Kenya'], ['Kisumu', 'Kenya'],
+    ['Hanoi', 'Vietnam'], ['Ho Chi Minh City', 'Vietnam'], ['Da Nang', 'Vietnam'],
+    ['Tokyo', 'Japan'], ['Osaka', 'Japan'], ['Kyoto', 'Japan'], ['Yokohama', 'Japan'], ['Fukuoka', 'Japan'],
+    ['Paris', 'France'], ['Lyon', 'France'], ['Marseille', 'France'], ['Toulouse', 'France'],
+    ['Accra', 'Ghana'], ['Kumasi', 'Ghana'],
+    ['Madrid', 'Spain'], ['Barcelona', 'Spain'], ['Valencia', 'Spain'], ['Seville', 'Spain'],
+    ['Rome', 'Italy'], ['Milan', 'Italy'], ['Naples', 'Italy'], ['Florence', 'Italy'], ['Turin', 'Italy'],
+    ['Cairo', 'Egypt'], ['Alexandria', 'Egypt'], ['Giza', 'Egypt'],
+    ['Istanbul', 'Turkey'], ['Ankara', 'Turkey'], ['Izmir', 'Turkey'],
+    ['Karachi', 'Pakistan'], ['Lahore', 'Pakistan'], ['Islamabad', 'Pakistan'],
+    ['Dhaka', 'Bangladesh'], ['Chittagong', 'Bangladesh'],
+    ['Jakarta', 'Indonesia'], ['Surabaya', 'Indonesia'], ['Bandung', 'Indonesia'], ['Bali', 'Indonesia'],
+    ['Bangkok', 'Thailand'], ['Chiang Mai', 'Thailand'], ['Phuket', 'Thailand'],
+    ['Bogotá', 'Colombia'], ['Medellín', 'Colombia'], ['Cali', 'Colombia'],
+    ['Buenos Aires', 'Argentina'], ['Córdoba', 'Argentina'], ['Rosario', 'Argentina'],
+    ['Lima', 'Peru'], ['Arequipa', 'Peru'], ['Cusco', 'Peru'],
+    ['Santiago', 'Chile'], ['Valparaíso', 'Chile'],
+    ['Kingston', 'Jamaica'], ['Montego Bay', 'Jamaica'],
+    ['Santo Domingo', 'Dominican Republic'], ['Santiago de los Caballeros', 'Dominican Republic'],
+    ['Riyadh', 'Saudi Arabia'], ['Jeddah', 'Saudi Arabia'], ['Dammam', 'Saudi Arabia'],
+    ['Dubai', 'United Arab Emirates'], ['Abu Dhabi', 'United Arab Emirates'],
+    ['Tel Aviv', 'Israel'], ['Jerusalem', 'Israel'], ['Haifa', 'Israel'],
+    ['Addis Ababa', 'Ethiopia'], ['Bahir Dar', 'Ethiopia'],
+    ['Johannesburg', 'South Africa'], ['Cape Town', 'South Africa'], ['Durban', 'South Africa'], ['Pretoria', 'South Africa'],
+    ['Casablanca', 'Morocco'], ['Rabat', 'Morocco'], ['Marrakesh', 'Morocco'],
+    ['Amsterdam', 'Netherlands'], ['Rotterdam', 'Netherlands'], ['Utrecht', 'Netherlands'],
+    ['Stockholm', 'Sweden'], ['Gothenburg', 'Sweden'], ['Uppsala', 'Sweden'],
+    ['Warsaw', 'Poland'], ['Kraków', 'Poland'], ['Wrocław', 'Poland'],
+    ['Dublin', 'Ireland'], ['Cork', 'Ireland'], ['Galway', 'Ireland'],
+    ['Athens', 'Greece'], ['Thessaloniki', 'Greece'],
+    ['Kyiv', 'Ukraine'], ['Lviv', 'Ukraine'], ['Odesa', 'Ukraine'],
+    ['Auckland', 'New Zealand'], ['Wellington', 'New Zealand'], ['Christchurch', 'New Zealand'],
+    ['Singapore', 'Singapore'],
+    ['Taipei', 'Taiwan'], ['Kaohsiung', 'Taiwan'], ['Taichung', 'Taiwan'],
+    ['Kuala Lumpur', 'Malaysia'], ['Penang', 'Malaysia'],
+    ['Kathmandu', 'Nepal'], ['Pokhara', 'Nepal']
   ];
+  // [women's first names, men's first names, family names] by country.
+  const INTL_NAMES = {
+    'Canada': [['Emma', 'Olivia', 'Charlotte', 'Chloé', 'Léa', 'Maya', 'Avery', 'Sophie'], ['Liam', 'Noah', 'William', 'Félix', 'Owen', 'Lucas', 'Benjamin', 'Nathan'], ['Tremblay', 'Gagnon', 'Roy', 'MacDonald', 'Campbell', 'Wilson', 'Côté', 'Leblanc', 'Martin', 'Smith']],
+    'Mexico': [['Sofía', 'Valentina', 'Regina', 'Ximena', 'Camila', 'Renata', 'Mariana', 'Fernanda'], ['Santiago', 'Mateo', 'Diego', 'Emiliano', 'Leonardo', 'Sebastián', 'Iker', 'Alejandro'], ['Hernández', 'García', 'Martínez', 'López', 'González', 'Rodríguez', 'Pérez', 'Sánchez', 'Ramírez', 'Flores']],
+    'United Kingdom': [['Olivia', 'Amelia', 'Isla', 'Ava', 'Freya', 'Poppy', 'Imogen', 'Harriet'], ['Oliver', 'George', 'Harry', 'Arthur', 'Alfie', 'Freddie', 'Archie', 'Rory'], ['Smith', 'Jones', 'Taylor', 'Brown', 'Evans', 'Wright', 'Hughes', 'Patel', 'Thompson', 'Clarke']],
+    'South Korea': [['Seo-yeon', 'Ji-woo', 'Ha-eun', 'Min-seo', 'Su-ah', 'Ye-jin', 'Da-eun', 'Yu-na'], ['Min-jun', 'Seo-jun', 'Do-yun', 'Ha-joon', 'Ji-ho', 'Jun-woo', 'Hyun-woo', 'Ye-jun'], ['Kim', 'Lee', 'Park', 'Choi', 'Jung', 'Kang', 'Cho', 'Yoon', 'Jang', 'Lim']],
+    'India': [['Aanya', 'Diya', 'Ananya', 'Ishita', 'Saanvi', 'Priya', 'Kavya', 'Meera'], ['Aarav', 'Vihaan', 'Arjun', 'Rohan', 'Aditya', 'Karthik', 'Siddharth', 'Ishaan'], ['Sharma', 'Patel', 'Reddy', 'Iyer', 'Gupta', 'Nair', 'Singh', 'Rao', 'Mehta', 'Kapoor']],
+    'Nigeria': [['Chiamaka', 'Adaeze', 'Funmilayo', 'Ngozi', 'Amara', 'Temitope', 'Zainab', 'Ifeoma'], ['Chinedu', 'Oluwaseun', 'Emeka', 'Tunde', 'Ibrahim', 'Obinna', 'Ayodele', 'Kelechi'], ['Okafor', 'Adeyemi', 'Okonkwo', 'Bello', 'Eze', 'Adebayo', 'Nwosu', 'Abubakar', 'Olawale', 'Obi']],
+    'Brazil': [['Ana', 'Beatriz', 'Júlia', 'Larissa', 'Mariana', 'Gabriela', 'Letícia', 'Isabela'], ['João', 'Pedro', 'Gabriel', 'Lucas', 'Matheus', 'Rafael', 'Thiago', 'Gustavo'], ['Silva', 'Santos', 'Oliveira', 'Souza', 'Costa', 'Pereira', 'Almeida', 'Ferreira', 'Carvalho', 'Rocha']],
+    'China': [['Mei', 'Xinyi', 'Yuxuan', 'Zihan', 'Ying', 'Jiayi', 'Lingling', 'Xiaoling'], ['Wei', 'Hao', 'Jun', 'Zihao', 'Yichen', 'Ming', 'Tao', 'Haoran'], ['Wang', 'Li', 'Zhang', 'Liu', 'Chen', 'Yang', 'Huang', 'Zhao', 'Wu', 'Zhou']],
+    'Germany': [['Emma', 'Mia', 'Hannah', 'Lena', 'Lea', 'Johanna', 'Clara', 'Marie'], ['Lukas', 'Leon', 'Finn', 'Jonas', 'Felix', 'Maximilian', 'Paul', 'Niklas'], ['Müller', 'Schmidt', 'Schneider', 'Fischer', 'Weber', 'Meyer', 'Wagner', 'Becker', 'Hoffmann', 'Koch']],
+    'Philippines': [['Maria', 'Angel', 'Princess', 'Andrea', 'Kristine', 'Nicole', 'Bea', 'Patricia'], ['Jose', 'John Paul', 'Mark', 'Miguel', 'Carlo', 'Joshua', 'Paolo', 'Rafael'], ['Santos', 'Reyes', 'Cruz', 'Bautista', 'Garcia', 'Mendoza', 'Ramos', 'Villanueva', 'Dela Cruz', 'Aquino']],
+    'Australia': [['Charlotte', 'Isla', 'Matilda', 'Ruby', 'Zoe', 'Grace', 'Chloe', 'Sienna'], ['Jack', 'Oliver', 'William', 'Lachlan', 'Cooper', 'Hamish', 'Thomas', 'Riley'], ['Smith', 'Jones', 'Williams', 'Brown', 'Wilson', 'Taylor', 'Nguyen', 'Kelly', 'Ryan', 'Murphy']],
+    'Kenya': [['Wanjiru', 'Akinyi', 'Njeri', 'Chebet', 'Atieno', 'Wambui', 'Nyambura', 'Jepchirchir'], ['Kamau', 'Otieno', 'Kipchoge', 'Mwangi', 'Odhiambo', 'Kiprono', 'Njoroge', 'Baraka'], ['Mwangi', 'Ochieng', 'Kariuki', 'Wanjala', 'Kiprop', 'Mutua', 'Omondi', 'Kimani', 'Cheruiyot', 'Njoroge']],
+    'Vietnam': [['Linh', 'Trang', 'Huong', 'Mai', 'Ngoc', 'Thao', 'Anh', 'Phuong'], ['Minh', 'Duc', 'Huy', 'Khoa', 'Tuan', 'Bao', 'Long', 'Quang'], ['Nguyen', 'Tran', 'Le', 'Pham', 'Hoang', 'Phan', 'Vu', 'Dang', 'Bui', 'Do']],
+    'Japan': [['Yui', 'Hina', 'Sakura', 'Aoi', 'Rin', 'Mei', 'Haruka', 'Yuna'], ['Haruto', 'Sota', 'Ren', 'Yuto', 'Riku', 'Kaito', 'Takumi', 'Hiroshi'], ['Sato', 'Suzuki', 'Takahashi', 'Tanaka', 'Watanabe', 'Ito', 'Yamamoto', 'Nakamura', 'Kobayashi', 'Kato']],
+    'France': [['Camille', 'Léa', 'Manon', 'Chloé', 'Inès', 'Louise', 'Juliette', 'Margaux'], ['Louis', 'Gabriel', 'Hugo', 'Arthur', 'Jules', 'Raphaël', 'Théo', 'Antoine'], ['Martin', 'Bernard', 'Dubois', 'Thomas', 'Robert', 'Moreau', 'Laurent', 'Lefebvre', 'Girard', 'Fournier']],
+    'Ghana': [['Akosua', 'Ama', 'Abena', 'Efua', 'Adwoa', 'Yaa', 'Esi', 'Afua'], ['Kwame', 'Kofi', 'Kwabena', 'Yaw', 'Kwaku', 'Kojo', 'Kwesi', 'Nana'], ['Mensah', 'Asante', 'Owusu', 'Boateng', 'Osei', 'Appiah', 'Agyeman', 'Darko', 'Addo', 'Ofori']],
+    'Spain': [['Lucía', 'Martina', 'Paula', 'Carmen', 'Alba', 'Elena', 'Noa', 'Irene'], ['Hugo', 'Pablo', 'Álvaro', 'Daniel', 'Javier', 'Marcos', 'Adrián', 'Mario'], ['García', 'Fernández', 'González', 'Rodríguez', 'López', 'Martínez', 'Sánchez', 'Romero', 'Navarro', 'Torres']],
+    'Italy': [['Giulia', 'Sofia', 'Aurora', 'Martina', 'Chiara', 'Francesca', 'Alice', 'Elena'], ['Leonardo', 'Francesco', 'Alessandro', 'Lorenzo', 'Matteo', 'Andrea', 'Marco', 'Luca'], ['Rossi', 'Russo', 'Ferrari', 'Esposito', 'Bianchi', 'Romano', 'Colombo', 'Ricci', 'Marino', 'Greco']],
+    'Egypt': [['Nour', 'Mariam', 'Salma', 'Farida', 'Malak', 'Yasmin', 'Habiba', 'Laila'], ['Omar', 'Youssef', 'Ahmed', 'Mohamed', 'Karim', 'Ali', 'Hassan', 'Mostafa'], ['Hassan', 'Ibrahim', 'Mahmoud', 'Mostafa', 'El-Sayed', 'Abdelrahman', 'Fawzy', 'Nasser', 'Saleh', 'Farouk']],
+    'Turkey': [['Zeynep', 'Elif', 'Defne', 'Ecrin', 'Azra', 'Ayşe', 'Ela', 'Selin'], ['Yusuf', 'Emir', 'Mehmet', 'Mustafa', 'Kerem', 'Arda', 'Can', 'Burak'], ['Yılmaz', 'Kaya', 'Demir', 'Şahin', 'Çelik', 'Yıldız', 'Aydın', 'Öztürk', 'Arslan', 'Doğan']],
+    'Pakistan': [['Ayesha', 'Fatima', 'Hira', 'Maryam', 'Zara', 'Sana', 'Iqra', 'Mahnoor'], ['Ali', 'Hamza', 'Bilal', 'Usman', 'Ahmed', 'Hassan', 'Zain', 'Saad'], ['Khan', 'Ahmed', 'Malik', 'Hussain', 'Qureshi', 'Siddiqui', 'Chaudhry', 'Raza', 'Butt', 'Sheikh']],
+    'Bangladesh': [['Nusrat', 'Tasnim', 'Farzana', 'Sadia', 'Anika', 'Riya', 'Tahmina', 'Mim'], ['Rahim', 'Tanvir', 'Arif', 'Sakib', 'Imran', 'Fahim', 'Rafi', 'Nayeem'], ['Rahman', 'Hossain', 'Islam', 'Ahmed', 'Chowdhury', 'Akter', 'Sarker', 'Uddin', 'Khan', 'Begum']],
+    'Indonesia': [['Putri', 'Siti', 'Dewi', 'Ayu', 'Nadia', 'Rani', 'Intan', 'Sari'], ['Budi', 'Agus', 'Rizky', 'Dimas', 'Arif', 'Fajar', 'Bayu', 'Andi'], ['Santoso', 'Wijaya', 'Saputra', 'Hidayat', 'Pratama', 'Kurniawan', 'Setiawan', 'Gunawan', 'Halim', 'Siregar']],
+    'Thailand': [['Ploy', 'Nicha', 'Ploypailin', 'Siriporn', 'Kanya', 'Malee', 'Naree', 'Pim'], ['Somchai', 'Anan', 'Krit', 'Nattapong', 'Thanakorn', 'Pakorn', 'Chai', 'Arthit'], ['Srisuk', 'Wongsa', 'Chaiyaporn', 'Rattanakorn', 'Somboon', 'Thongchai', 'Kittisak', 'Boonmee', 'Saetang', 'Phromma']],
+    'Colombia': [['Valentina', 'Isabella', 'Mariana', 'Daniela', 'Sara', 'Gabriela', 'Juliana', 'Camila'], ['Santiago', 'Sebastián', 'Juan José', 'Samuel', 'Nicolás', 'Andrés', 'Felipe', 'Mateo'], ['Rodríguez', 'Gómez', 'Martínez', 'García', 'López', 'Hernández', 'Restrepo', 'Ospina', 'Vargas', 'Castro']],
+    'Argentina': [['Sofía', 'Martina', 'Catalina', 'Delfina', 'Valentina', 'Agustina', 'Lucía', 'Florencia'], ['Mateo', 'Bautista', 'Thiago', 'Santino', 'Joaquín', 'Facundo', 'Tomás', 'Franco'], ['González', 'Rodríguez', 'Fernández', 'López', 'Romero', 'Sosa', 'Álvarez', 'Benítez', 'Acosta', 'Medina']],
+    'Peru': [['Camila', 'Valeria', 'Ximena', 'Luciana', 'Andrea', 'Fiorella', 'Rosa', 'Milagros'], ['Santiago', 'Diego', 'José', 'Renato', 'Luis', 'Jorge', 'Piero', 'Carlos'], ['Quispe', 'Flores', 'Huamán', 'Mamani', 'Rojas', 'Vargas', 'Chávez', 'Torres', 'Ramos', 'Castillo']],
+    'Chile': [['Sofía', 'Isidora', 'Florencia', 'Agustina', 'Antonia', 'Josefa', 'Trinidad', 'Catalina'], ['Agustín', 'Benjamín', 'Vicente', 'Martín', 'Matías', 'Cristóbal', 'Tomás', 'Joaquín'], ['González', 'Muñoz', 'Rojas', 'Díaz', 'Pérez', 'Soto', 'Contreras', 'Silva', 'Martínez', 'Sepúlveda']],
+    'Jamaica': [['Shanice', 'Tianna', 'Kimberly', 'Annalise', 'Shelly-Ann', 'Rochelle', 'Danielle', 'Kerry-Ann'], ['Andre', 'Jermaine', 'Damion', 'Kemar', 'Rohan', 'Omari', 'Javon', 'Tyrone'], ['Brown', 'Campbell', 'Williams', 'Thompson', 'Clarke', 'Grant', 'McKenzie', 'Reid', 'Gordon', 'Morgan']],
+    'Dominican Republic': [['Yaritza', 'Daniela', 'Yamilet', 'Paola', 'Nicole', 'Esmeralda', 'Yokasta', 'Rosanna'], ['Juan Carlos', 'José', 'Luis', 'Miguel', 'Ramón', 'Wilson', 'Yeison', 'Starlin'], ['Peña', 'Reyes', 'Rodríguez', 'Santana', 'Batista', 'Guzmán', 'Almonte', 'De los Santos', 'Polanco', 'Féliz']],
+    'Saudi Arabia': [['Noura', 'Sara', 'Lama', 'Reem', 'Haya', 'Jood', 'Shahad', 'Dana'], ['Abdullah', 'Mohammed', 'Faisal', 'Khalid', 'Saud', 'Turki', 'Fahad', 'Nasser'], ['Al-Saud', 'Al-Qahtani', 'Al-Harbi', 'Al-Otaibi', 'Al-Ghamdi', 'Al-Zahrani', 'Al-Shehri', 'Al-Dosari', 'Al-Mutairi', 'Al-Anazi']],
+    'United Arab Emirates': [['Mariam', 'Fatima', 'Hessa', 'Shamma', 'Maitha', 'Alya', 'Mahra', 'Latifa'], ['Mohammed', 'Hamdan', 'Rashid', 'Saeed', 'Khalifa', 'Sultan', 'Majid', 'Ahmed'], ['Al-Maktoum', 'Al-Nahyan', 'Al-Falasi', 'Al-Mansouri', 'Al-Shamsi', 'Al-Ketbi', 'Al-Suwaidi', 'Al-Hammadi', 'Al-Mazrouei', 'Al-Dhaheri']],
+    'Israel': [['Noa', 'Tamar', 'Maya', 'Yael', 'Shira', 'Avigail', 'Talia', 'Michal'], ['Noam', 'Ariel', 'Itai', 'Yonatan', 'Eitan', 'Omer', 'Daniel', 'Amit'], ['Cohen', 'Levi', 'Mizrahi', 'Peretz', 'Biton', 'Friedman', 'Avraham', 'Dahan', 'Katz', 'Shapiro']],
+    'Ethiopia': [['Hana', 'Selam', 'Meron', 'Bethlehem', 'Liya', 'Tsion', 'Mahlet', 'Rahel'], ['Abebe', 'Dawit', 'Yonas', 'Mekonnen', 'Biniyam', 'Henok', 'Tewodros', 'Natnael'], ['Tesfaye', 'Bekele', 'Girma', 'Haile', 'Tadesse', 'Alemu', 'Kebede', 'Mengistu', 'Wolde', 'Getachew']],
+    'South Africa': [['Lerato', 'Thandiwe', 'Amahle', 'Naledi', 'Zanele', 'Lindiwe', 'Chloé', 'Kayla'], ['Sipho', 'Thabo', 'Lwazi', 'Bongani', 'Kagiso', 'Pieter', 'Liam', 'Mandla'], ['Nkosi', 'Dlamini', 'Ndlovu', 'Khumalo', 'Mokoena', 'Van der Merwe', 'Botha', 'Naidoo', 'Mahlangu', 'Zulu']],
+    'Morocco': [['Salma', 'Imane', 'Kawtar', 'Yasmine', 'Hiba', 'Rania', 'Asmae', 'Meryem'], ['Youssef', 'Mehdi', 'Hamza', 'Amine', 'Anas', 'Ayoub', 'Omar', 'Reda'], ['Alaoui', 'Benali', 'El Amrani', 'Bennani', 'Tazi', 'Idrissi', 'Berrada', 'Chraibi', 'Lahlou', 'Fassi']],
+    'Netherlands': [['Emma', 'Julia', 'Sophie', 'Lotte', 'Anna', 'Fleur', 'Sanne', 'Noor'], ['Daan', 'Sem', 'Lucas', 'Bram', 'Jesse', 'Thijs', 'Ruben', 'Sven'], ['de Jong', 'Jansen', 'de Vries', 'van den Berg', 'Bakker', 'Visser', 'Smit', 'Meijer', 'Mulder', 'de Boer']],
+    'Sweden': [['Alice', 'Maja', 'Elsa', 'Astrid', 'Wilma', 'Ebba', 'Freja', 'Saga'], ['William', 'Lucas', 'Elias', 'Oscar', 'Hugo', 'Axel', 'Erik', 'Viktor'], ['Andersson', 'Johansson', 'Karlsson', 'Nilsson', 'Eriksson', 'Larsson', 'Olsson', 'Persson', 'Lindberg', 'Svensson']],
+    'Poland': [['Zuzanna', 'Julia', 'Maja', 'Zofia', 'Hanna', 'Aleksandra', 'Natalia', 'Wiktoria'], ['Jakub', 'Antoni', 'Szymon', 'Jan', 'Filip', 'Kacper', 'Mateusz', 'Piotr'], ['Nowak', 'Kowalski', 'Wiśniewski', 'Wójcik', 'Kamiński', 'Lewandowski', 'Zieliński', 'Szymański', 'Woźniak', 'Dąbrowski']],
+    'Ireland': [['Aoife', 'Saoirse', 'Ciara', 'Niamh', 'Sinéad', 'Róisín', 'Orla', 'Clodagh'], ['Seán', 'Cian', 'Oisín', 'Darragh', 'Conor', 'Fionn', 'Liam', 'Ronan'], ['Murphy', 'Kelly', 'O’Sullivan', 'Walsh', 'Byrne', 'Ryan', 'O’Connor', 'O’Brien', 'Doyle', 'McCarthy']],
+    'Greece': [['Maria', 'Eleni', 'Katerina', 'Sofia', 'Georgia', 'Ioanna', 'Dimitra', 'Anastasia'], ['Georgios', 'Dimitris', 'Nikos', 'Konstantinos', 'Giannis', 'Alexandros', 'Christos', 'Panagiotis'], ['Papadopoulos', 'Pappas', 'Nikolaidis', 'Georgiou', 'Karagiannis', 'Vlachos', 'Antoniou', 'Oikonomou', 'Makris', 'Dimitriou']],
+    'Ukraine': [['Anastasiia', 'Sofiia', 'Daryna', 'Yuliia', 'Kateryna', 'Viktoriia', 'Oksana', 'Iryna'], ['Oleksandr', 'Andrii', 'Dmytro', 'Maksym', 'Bohdan', 'Taras', 'Yaroslav', 'Mykola'], ['Melnyk', 'Shevchenko', 'Kovalenko', 'Bondarenko', 'Tkachenko', 'Kravchenko', 'Oliinyk', 'Boyko', 'Koval', 'Moroz']],
+    'New Zealand': [['Isla', 'Charlotte', 'Olivia', 'Amelia', 'Aroha', 'Mia', 'Ruby', 'Hana'], ['Oliver', 'Jack', 'Noah', 'Leo', 'Nikau', 'Hunter', 'George', 'Tama'], ['Smith', 'Wilson', 'Williams', 'Brown', 'Taylor', 'Ngata', 'Parata', 'Walker', 'Anderson', 'Thompson']],
+    'Singapore': [['Hui Min', 'Xin Yi', 'Nur Aisyah', 'Priya', 'Jia Hui', 'Siti', 'Wen Qi', 'Shu Fen'], ['Wei Jie', 'Jun Hao', 'Muhammad', 'Arjun', 'Zhi Hao', 'Darren', 'Ryan', 'Kai Xiang'], ['Tan', 'Lim', 'Lee', 'Ng', 'Ong', 'Wong', 'Goh', 'Chua', 'Rahman', 'Pillai']],
+    'Taiwan': [['Yi-Ting', 'Ya-Ting', 'Hsin-Yi', 'Shu-Fen', 'Pei-Shan', 'Yu-Chen', 'Wan-Ting', 'Chia-Hui'], ['Chia-Hao', 'Chih-Ming', 'Yu-Hsiang', 'Po-Wei', 'Chun-Hung', 'Kuan-Ting', 'Wei-Lun', 'Tsung-Han'], ['Chen', 'Lin', 'Huang', 'Chang', 'Lee', 'Wang', 'Wu', 'Liu', 'Tsai', 'Yang']],
+    'Malaysia': [['Nurul', 'Siti', 'Aisyah', 'Mei Ling', 'Kavitha', 'Farah', 'Hui Wen', 'Aina'], ['Muhammad', 'Ahmad', 'Hafiz', 'Wei Ming', 'Arvind', 'Amir', 'Jia Wei', 'Danial'], ['Abdullah', 'Rahman', 'Ismail', 'Tan', 'Lim', 'Wong', 'Krishnan', 'Hassan', 'Ong', 'Yusof']],
+    'Nepal': [['Sita', 'Anjali', 'Sunita', 'Pooja', 'Srijana', 'Asmita', 'Kabita', 'Prakriti'], ['Aayush', 'Bibek', 'Sandesh', 'Sagar', 'Prakash', 'Roshan', 'Suman', 'Nabin'], ['Shrestha', 'Gurung', 'Thapa', 'Tamang', 'Rai', 'Adhikari', 'Karki', 'Magar', 'Sharma', 'Poudel']]
+  };
 
   // First names by gender. NEUTRAL names can go to anyone.
   const FEMALE_NAMES = [
@@ -107,6 +202,13 @@
     '2-D Art and Design', 'Music Theory', 'Spanish Language', 'French Language',
     'Chinese Language', 'Latin', 'Seminar', 'Research', 'African American Studies'
   ];
+  // Courses most students take senior year. Applications go in before those exams, so they have no score yet.
+  const SENIOR_APS = [
+    'Calculus BC', 'English Literature', 'Physics C: Mechanics', 'US Government', 'Comparative Government',
+    'Macroeconomics', 'Microeconomics', 'Statistics', 'Psychology', 'Research', 'Physics 2'
+  ];
+  // Pairs a student wouldn't take both of.
+  const AP_EXCLUSIVE = [['Calculus AB', 'Calculus BC']];
 
   // Groupings for the majors catalog.
   const AREAS = [
@@ -226,29 +328,48 @@
     courses: ['English Composition', 'College Algebra', 'First-Year Seminar', 'Intro to Statistics', 'World Cultures', 'Health & Wellness', 'Ethics in Society', 'Information Literacy', 'Public Speaking Basics', 'Scientific Reasoning', 'Art Appreciation', 'Personal Finance Basics']
   };
 
-  // roster = full team size. games = games (or meets) per season.
+  // Every program is its own team: men's and women's squads are separate, and only co-ed esports mixes them.
+  // g = who it recruits ('M', 'F', or null for co-ed). roster = full team size. games = games (or meets) per season.
   // cost = yearly program cost. revenue = ticket and media money for a .500 season.
-  // g = which students the program recruits: 'M' men's, 'F' women's, or null for men's and women's squads.
+  const S = (id, base, g, roster, games, cost, revenue) => ({
+    id, base, g, roster, games, cost, revenue,
+    name: (g === 'M' ? 'Men’s ' : g === 'F' ? 'Women’s ' : '') + base
+  });
   const SPORTS = [
-    { id: 'football', name: 'Football', g: 'M', roster: 85, games: 12, cost: 2600000, revenue: 2200000 },
-    { id: 'basketball', name: 'Basketball', g: null, roster: 15, games: 30, cost: 950000, revenue: 1100000 },
-    { id: 'baseball', name: 'Baseball', g: 'M', roster: 35, games: 50, cost: 600000, revenue: 250000 },
-    { id: 'softball', name: 'Softball', g: 'F', roster: 25, games: 50, cost: 420000, revenue: 90000 },
-    { id: 'soccer', name: 'Soccer', g: null, roster: 28, games: 18, cost: 450000, revenue: 120000 },
-    { id: 'volleyball', name: 'Volleyball', g: null, roster: 18, games: 28, cost: 380000, revenue: 110000 },
-    { id: 'hockey', name: 'Ice Hockey', g: null, roster: 28, games: 34, cost: 1200000, revenue: 700000 },
-    { id: 'lacrosse', name: 'Lacrosse', g: null, roster: 40, games: 16, cost: 520000, revenue: 80000 },
-    { id: 'swim', name: 'Swimming & Diving', g: null, roster: 30, games: 12, cost: 480000, revenue: 30000 },
-    { id: 'track', name: 'Track & Field', g: null, roster: 50, games: 10, cost: 420000, revenue: 30000 },
-    { id: 'xc', name: 'Cross Country', g: null, roster: 14, games: 8, cost: 160000, revenue: 10000 },
-    { id: 'tennis', name: 'Tennis', g: null, roster: 10, games: 22, cost: 220000, revenue: 20000 },
-    { id: 'golf', name: 'Golf', g: null, roster: 10, games: 10, cost: 260000, revenue: 30000 },
-    { id: 'wrestling', name: 'Wrestling', g: 'M', roster: 30, games: 16, cost: 340000, revenue: 60000 },
-    { id: 'rowing', name: 'Rowing', g: null, roster: 40, games: 8, cost: 520000, revenue: 20000 },
-    { id: 'gymnastics', name: 'Gymnastics', g: 'F', roster: 16, games: 12, cost: 400000, revenue: 90000 },
-    { id: 'fieldhockey', name: 'Field Hockey', g: 'F', roster: 24, games: 18, cost: 330000, revenue: 20000 },
-    { id: 'waterpolo', name: 'Water Polo', g: null, roster: 24, games: 24, cost: 300000, revenue: 15000 },
-    { id: 'esports', name: 'Esports', g: null, roster: 12, games: 20, cost: 180000, revenue: 40000 }
+    S('m-football', 'Football', 'M', 85, 12, 2600000, 2200000),
+    S('m-basketball', 'Basketball', 'M', 15, 30, 1000000, 1100000),
+    S('m-baseball', 'Baseball', 'M', 35, 50, 600000, 250000),
+    S('m-soccer', 'Soccer', 'M', 28, 18, 300000, 60000),
+    S('m-volleyball', 'Volleyball', 'M', 18, 26, 220000, 20000),
+    S('m-hockey', 'Ice Hockey', 'M', 28, 34, 900000, 600000),
+    S('m-lacrosse', 'Lacrosse', 'M', 45, 15, 400000, 60000),
+    S('m-swim', 'Swimming & Diving', 'M', 28, 12, 300000, 15000),
+    S('m-track', 'Track & Field', 'M', 45, 10, 260000, 15000),
+    S('m-xc', 'Cross Country', 'M', 14, 8, 90000, 5000),
+    S('m-tennis', 'Tennis', 'M', 10, 22, 140000, 10000),
+    S('m-golf', 'Golf', 'M', 10, 10, 160000, 15000),
+    S('m-wrestling', 'Wrestling', 'M', 30, 16, 340000, 60000),
+    S('m-rowing', 'Rowing', 'M', 40, 8, 350000, 10000),
+    S('m-gymnastics', 'Gymnastics', 'M', 18, 12, 300000, 20000),
+    S('m-waterpolo', 'Water Polo', 'M', 24, 26, 220000, 10000),
+    S('w-basketball', 'Basketball', 'F', 15, 30, 700000, 300000),
+    S('w-softball', 'Softball', 'F', 25, 50, 420000, 90000),
+    S('w-soccer', 'Soccer', 'F', 28, 18, 300000, 70000),
+    S('w-volleyball', 'Volleyball', 'F', 18, 28, 300000, 100000),
+    S('w-beachvb', 'Beach Volleyball', 'F', 16, 20, 180000, 15000),
+    S('w-hockey', 'Ice Hockey', 'F', 24, 32, 600000, 80000),
+    S('w-lacrosse', 'Lacrosse', 'F', 35, 17, 350000, 30000),
+    S('w-fieldhockey', 'Field Hockey', 'F', 24, 18, 330000, 20000),
+    S('w-swim', 'Swimming & Diving', 'F', 30, 12, 300000, 15000),
+    S('w-track', 'Track & Field', 'F', 45, 10, 260000, 15000),
+    S('w-xc', 'Cross Country', 'F', 14, 8, 90000, 5000),
+    S('w-tennis', 'Tennis', 'F', 10, 22, 140000, 10000),
+    S('w-golf', 'Golf', 'F', 9, 10, 150000, 10000),
+    S('w-wrestling', 'Wrestling', 'F', 25, 14, 220000, 15000),
+    S('w-rowing', 'Rowing', 'F', 55, 8, 450000, 10000),
+    S('w-gymnastics', 'Gymnastics', 'F', 16, 12, 400000, 90000),
+    S('w-waterpolo', 'Water Polo', 'F', 24, 26, 220000, 10000),
+    S('esports', 'Esports', null, 12, 20, 180000, 40000)
   ];
 
   // Section sizes for a class. Small classes cost more per seat but raise prestige.
@@ -341,6 +462,54 @@
     relaxed: { label: 'Hands-off', interest: 1.3, risk: 2.2, life: 1.2, note: 'Big parties and big rush classes. Incidents are far more likely.' }
   };
 
+  // Career outcomes by major: [median starting salary, share employed or in grad school within six months].
+  const OUTCOMES = {
+    bio: [42000, 0.86], chem: [52000, 0.88], phys: [60000, 0.89], math: [62000, 0.9], stat: [68000, 0.92],
+    envs: [45000, 0.84], neuro: [45000, 0.88], bchm: [50000, 0.89], mbio: [40000, 0.8], geol: [55000, 0.86], astr: [58000, 0.85],
+    cs: [80000, 0.9], data: [78000, 0.91], engr: [70000, 0.92], mech: [72000, 0.93], elec: [75000, 0.93], civil: [66000, 0.94],
+    bme: [68000, 0.88], cheme: [77000, 0.93], aero: [74000, 0.91], cyber: [75000, 0.93], infosys: [66000, 0.91],
+    nurs: [72000, 0.96], kin: [40000, 0.85], pubh: [45000, 0.86], pharm: [60000, 0.9], nutr: [46000, 0.86], hsci: [45000, 0.87],
+    bus: [58000, 0.89], fin: [66000, 0.91], acct: [60000, 0.94], mktg: [52000, 0.88], entr: [50000, 0.82], hosp: [44000, 0.9],
+    scm: [62000, 0.93], sptm: [42000, 0.84],
+    econ: [63000, 0.89], psych: [40000, 0.83], poli: [46000, 0.85], crim: [42000, 0.86], soc: [40000, 0.82], anth: [40000, 0.8],
+    intl: [48000, 0.84], geog: [46000, 0.84], ling: [44000, 0.82], cogs: [55000, 0.86], gws: [38000, 0.8],
+    hist: [42000, 0.82], engl: [42000, 0.81], lang: [42000, 0.83], phil: [46000, 0.82], rel: [38000, 0.8], clas: [42000, 0.82],
+    afam: [40000, 0.81], cwri: [38000, 0.76],
+    art: [36000, 0.74], mus: [36000, 0.76], film: [40000, 0.75], thea: [35000, 0.72], danc: [32000, 0.72], gdes: [47000, 0.84],
+    fash: [42000, 0.78], game: [60000, 0.8], anim: [50000, 0.78], photo: [34000, 0.72],
+    edu: [44000, 0.93], comm: [46000, 0.84], jour: [42000, 0.8], arch: [55000, 0.88], agri: [50000, 0.92], ansc: [42000, 0.86],
+    socw: [40000, 0.9], legal: [46000, 0.85], fors: [48000, 0.84], avia: [65000, 0.9], cmgt: [68000, 0.95], plan: [52000, 0.87],
+    undeclared: [38000, 0.74]
+  };
+
+  // NCAA-style divisions. schol = athletic scholarship per recruit per year. revenue scales ticket and media money.
+  // starTilt shifts recruits toward higher star ratings. appMult is the exposure the division brings to admissions.
+  const DIVISIONS = {
+    D3: { label: 'Division III', rank: 3, schol: 0, revenue: 0.6, starTilt: 0, yield: 1, appMult: 1, minPrograms: 0, minWomen: 0, minPrestige: 0, fee: 0, transition: 0,
+      note: 'No athletic scholarships. Students play for the love of it.' },
+    D2: { label: 'Division II', rank: 2, schol: 7000, revenue: 1, starTilt: 0.5, yield: 1.1, appMult: 1.03, minPrograms: 10, minWomen: 5, minPrestige: 0, fee: 1500000, transition: 1,
+      note: 'Partial scholarships and regional rivalries.' },
+    D1: { label: 'Division I', rank: 1, schol: 18000, revenue: 1.8, starTilt: 1.2, yield: 1.25, appMult: 1.08, minPrograms: 14, minWomen: 7, minPrestige: 40, fee: 8000000, transition: 2,
+      note: 'Full scholarships, national TV and the biggest stage in college sports.' }
+  };
+
+  // Fictional conferences. tv = yearly media payout. minPrestige and needsFootball gate invitations.
+  const CONFERENCES = [
+    { id: 'heartland', name: 'Heartland Athletic Conference', div: 'D3', tv: 0, minPrestige: 0, needsFootball: false, rivals: ['Prairie View College', 'Millbrook College', 'St. Anselm University', 'Oak Hollow College'] },
+    { id: 'lal', name: 'Liberal Arts Athletic League', div: 'D3', tv: 100000, minPrestige: 50, needsFootball: false, rivals: ['Whitmore College', 'Ashbury College', 'Kenwood College', 'Halsey College'] },
+    { id: 'greatplains', name: 'Great Plains Conference', div: 'D2', tv: 300000, minPrestige: 0, needsFootball: false, rivals: ['Western Plains University', 'Cobalt State', 'Red River University', 'Northfield State'] },
+    { id: 'coastal', name: 'Coastal Valley Conference', div: 'D2', tv: 600000, minPrestige: 45, needsFootball: false, rivals: ['Bayshore University', 'Tidewater State', 'Seacliff University', 'Palmetto Bay College'] },
+    { id: 'frontier', name: 'Frontier Conference', div: 'D1', tv: 2000000, minPrestige: 40, needsFootball: false, rivals: ['High Desert University', 'Canyon State', 'Silver Basin University', 'Ridgeline State'] },
+    { id: 'atlantic', name: 'Atlantic Metro Conference', div: 'D1', tv: 5000000, minPrestige: 55, needsFootball: false, rivals: ['Harborview University', 'Metro Tech', 'Gotham State', 'Liberty Point University'] },
+    { id: 'mtnpac', name: 'Mountain Pacific Conference', div: 'D1', tv: 12000000, minPrestige: 65, needsFootball: true, rivals: ['Cascade State', 'Pacific Crest University', 'Summit State', 'Redwood University'] },
+    { id: 'premier', name: 'Premier Ten Conference', div: 'D1', tv: 30000000, minPrestige: 75, needsFootball: true, rivals: ['Great Lakes University', 'Ironwood State', 'Capital State University', 'Northern Plains University'] },
+    { id: 'southern', name: 'Southern Power Conference', div: 'D1', tv: 38000000, minPrestige: 80, needsFootball: true, rivals: ['Magnolia State', 'Bayou University', 'Delta Tech', 'Piedmont State University'] }
+  ];
+
+  // Admissions office: readers you hire and what recruiting costs.
+  const STAFF = { readerCost: 65000, filesPerReader: 600 };
+  const RECRUITING = { stateCost: 40000, countryCost: 60000 };
+
   const MASCOTS = ['Owls', 'Hawks', 'Bears', 'Wolves', 'Stags', 'Comets', 'Mariners', 'Foxes', 'Herons', 'Rams', 'Pioneers', 'Lynx', 'Bison', 'Ospreys', 'Badgers'];
   const NAME_PARTS = {
     first: ['North', 'West', 'East', 'South', 'Lake', 'Mount', 'Cedar', 'Pine', 'River', 'Harbor', 'Stone', 'Maple', 'Oak', 'Silver', 'Fair'],
@@ -360,8 +529,8 @@
   ];
 
   window.CB_DATA = {
-    STATES, INTERNATIONAL, FEMALE_NAMES, MALE_NAMES, NEUTRAL_NAMES, FIRST_NAMES, LAST_NAMES, AP_COURSES,
+    STATES, INTERNATIONAL, INTL_NAMES, FEMALE_NAMES, MALE_NAMES, NEUTRAL_NAMES, FIRST_NAMES, LAST_NAMES, AP_COURSES, SENIOR_APS, AP_EXCLUSIVE,
     AREAS, MAJORS, GEN_ED, SPORTS, CLASS_SIZES, LIFE_TAGS, ACTIVITIES, HOOKS, INCOME, DORMS, HALL_NAMES,
-    FRATERNITIES, SORORITIES, GREEK, GREEK_POLICIES, MASCOTS, NAME_PARTS, COLOR_PRESETS
+    FRATERNITIES, SORORITIES, GREEK, GREEK_POLICIES, OUTCOMES, DIVISIONS, CONFERENCES, STAFF, RECRUITING, MASCOTS, NAME_PARTS, COLOR_PRESETS
   };
 })();
