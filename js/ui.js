@@ -31,6 +31,9 @@
     bulkDeny: 35,
     bulkWait: 55,
     bulkTop: 50,
+    standSport: null,
+    compConf: 'all',
+    compSearch: '',
     modal: null
   };
 
@@ -48,6 +51,7 @@
   }
   const dollars = n => (n < 0 ? '−' : '') + '$' + Math.abs(Math.round(n)).toLocaleString();
   const pct = v => Math.round(v * 100) + '%';
+  const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
   const num = n => Math.round(n).toLocaleString();
   const plural = (n, word, many) => num(n) + ' ' + (n === 1 ? word : (many || word + 's'));
   const stars = n => '★'.repeat(n) + '☆'.repeat(5 - n);
@@ -61,6 +65,8 @@
   const residencyWord = a => (a.intl ? 'International' : isInState(a) ? 'In-state' : 'Out-of-state');
   const hookLabel = id => (D.HOOKS[id] ? D.HOOKS[id].label : '');
   const chapterById = id => G.state.greek.find(c => c.id === id);
+  const confById = id => G.CONFERENCES.find(c => c.id === id);
+  const confShort = id => { const c = confById(id); return c ? (c.short || c.name) : ''; };
 
   function inkFor(hex) {
     const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
@@ -73,6 +79,26 @@
     const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
     return lum > 0.4 ? '#14161a' : '#ffffff';
   }
+  // A round crest in a school's colors with its initials. Used in place of real logos.
+  function initials(name) {
+    const clean = name.replace(/\(.*?\)/g, ' ').replace(/[–—-]/g, ' ').trim();
+    if (/^[A-Z&]{2,4}$/.test(clean)) return clean;
+    const words = clean.split(/\s+/).filter(w => w && !/^(of|the|at|and|&|in)$/i.test(w));
+    if (words.length === 1) return words[0][0].toUpperCase();
+    return words.map(w => (/^[A-Z&]{2,}$/.test(w) ? w : w[0].toUpperCase())).join('').slice(0, 4);
+  }
+  function crest(sch, size) {
+    if (!sch) return '';
+    size = size || 24;
+    const text = initials(sch.name);
+    const ring = (sch.c2 || '#ffffff').toLowerCase() === (sch.c1 || '').toLowerCase() ? inkFor(sch.c1) : sch.c2;
+    return '<svg class="crest" width="' + size + '" height="' + size + '" viewBox="0 0 40 40" aria-hidden="true">' +
+      '<circle cx="20" cy="20" r="18" fill="' + esc(sch.c1) + '" stroke="' + esc(ring) + '" stroke-width="3"/>' +
+      '<text x="20" y="21" text-anchor="middle" dominant-baseline="central" fill="' + inkFor(sch.c1) + '" font-size="' + (text.length > 3 ? 9 : text.length > 2 ? 11 : text.length > 1 ? 14 : 18) + '" font-weight="700" font-family="IBM Plex Sans, system-ui, sans-serif">' + esc(text) + '</text></svg>';
+  }
+  const ourCrest = size => crest({ name: G.state.school.name, c1: G.state.school.primary, c2: G.state.school.secondary }, size);
+  const schoolLabel = (sch, size) => '<span class="school">' + crest(sch, size) + '<span>' + esc(sch.name) + '</span></span>';
+
   function setSchoolColors(primary, secondary) {
     const root = document.documentElement.style;
     root.setProperty('--school', primary);
@@ -296,6 +322,7 @@
     ['housing', 'Housing'],
     ['greek', 'Greek life'],
     ['sports', 'Sports'],
+    ['competition', 'Competition'],
     ['tuition', 'Tuition & aid']
   ];
 
@@ -312,7 +339,7 @@
       housing: m.housing.beds, greek: s.greek.length, sports: s.sports.length
     };
     const renderers = {
-      office: renderOffice, applications: renderApplications, recruiting: renderRecruiting, majors: renderMajors, classes: renderClasses,
+      office: renderOffice, applications: renderApplications, recruiting: renderRecruiting, competition: renderCompetition, majors: renderMajors, classes: renderClasses,
       students: renderStudents, housing: renderHousing, greek: renderGreek, sports: renderSports, tuition: renderTuition
     };
     const body = renderers[ui.tab]();
@@ -706,6 +733,11 @@
             (pkg.merit ? '' : '<p class="hint">No merit scholarship. Awards come from your rules in Tuition & aid.</p>') +
           '</section>' +
           '<section class="folder-sec">' +
+            '<h3>Also applying to</h3>' +
+            '<ul class="competitors">' + G.competitorsFor(a).map(G.schoolById).map(x =>
+              '<li>' + schoolLabel(x, 28) + '<span class="muted small">' + esc(x.city) + ', ' + x.state + ' · ' + esc(confShort(x.conf)) + ' · prestige ' + x.prestige + '</span></li>').join('') + '</ul>' +
+          '</section>' +
+          '<section class="folder-sec">' +
             '<h3>Enroll chance if admitted <span class="pill tone-' + yieldTone(p) + '">' + yieldWord(p) + ' ' + pct(p) + '</span></h3>' +
             '<ul class="factors">' + factors.map(f => '<li class="f-' + f.tone + '">' + esc(f.text) + '</li>').join('') + '</ul>' +
           '</section>' +
@@ -861,6 +893,83 @@
     '</section>';
 
     return '<div class="grid">' + staff + budget + campaigns + '</div>';
+  }
+
+  // ---------- competition ----------
+  function renderCompetition() {
+    const s = G.state;
+    const rank = G.prestigeRank();
+    const all = G.SCHOOLS;
+    const byPrestige = all.slice().sort((a, b) => b.prestige - a.prestige);
+    const above = byPrestige.filter(x => x.prestige > s.prestige).slice(-4);
+    const below = byPrestige.filter(x => x.prestige <= s.prestige).slice(0, 4);
+    const row = x => '<li>' + schoolLabel(x, 24) + '<span class="muted small">' + esc(confShort(x.conf)) + ' · ' + x.prestige + '</span></li>';
+
+    const stand = '<section class="card">' +
+      '<div class="card-head"><h2>Where you stand</h2><span class="muted small">Academic prestige among Division I schools</span></div>' +
+      '<div class="you-rank">' + ourCrest(48) + '<div><div class="kv-value">#' + num(rank) + ' <small>of ' + num(all.length + 1) + '</small></div><div class="muted small">' + esc(s.school.name) + ' · prestige ' + s.prestige.toFixed(1) + '</div></div></div>' +
+      '<ul class="ranklist">' + above.map(row).join('') +
+        '<li class="is-you"><span class="school">' + ourCrest(24) + '<b>' + esc(s.school.name) + '</b></span><span class="muted small">' + s.prestige.toFixed(1) + '</span></li>' +
+        below.map(row).join('') + '</ul>' +
+      '<p class="hint">Every applicant is also applying to a few real schools that fit their record and hometown. Students who say no to you enroll at one of them. Stronger schools beat you more often, so climbing the ranking wins more of these battles.</p>' +
+    '</section>';
+
+    const lost = s.lostTo || [];
+    const lostCard = '<section class="card">' +
+      '<div class="card-head"><h2>Where your admits went</h2><span class="muted small">Last cycle</span></div>' +
+      (lost.length
+        ? '<ul class="bars">' + lost.map(([id, n]) => {
+            const x = G.schoolById(id);
+            return '<li><span class="bar-label">' + schoolLabel(x, 20) + '</span><span class="bar-track"><span class="bar-fill" style="width:' + (n / lost[0][1] * 100) + '%"></span></span><span class="bar-num">' + n + '</span></li>';
+          }).join('') + '</ul>'
+        : '<p class="muted">After your first season you’ll see which schools your admitted students chose instead.</p>') +
+    '</section>';
+
+    const h2h = Object.entries(s.h2h || {}).map(([id, v]) => [G.schoolById(id), v[0], v[1]]).filter(r => r[0]).sort((a, b) => (b[1] + b[2]) - (a[1] + a[2])).slice(0, 15);
+    const h2hCard = '<section class="card span-2">' +
+      '<div class="card-head"><h2>Head-to-head for students</h2><span class="muted small">All-time, schools you meet most often</span></div>' +
+      (h2h.length
+        ? '<div class="table-wrap"><table class="table"><thead><tr><th>School</th><th>Conference</th><th class="num">Prestige</th><th class="num">Chose you</th><th class="num">Chose them</th><th class="num">Your win rate</th></tr></thead><tbody>' +
+            h2h.map(([x, w, l]) => '<tr><td>' + schoolLabel(x, 22) + '</td><td class="small">' + esc(confShort(x.conf)) + '</td><td class="num">' + x.prestige + '</td><td class="num">' + num(w) + '</td><td class="num">' + num(l) + '</td>' +
+              '<td class="num"><span class="' + (w >= l ? 'tone-good' : 'tone-bad') + '">' + pct(w / Math.max(1, w + l)) + '</span></td></tr>').join('') +
+          '</tbody></table></div>'
+        : '<p class="muted">No results yet. Each admitted student counts as a win against every other school they applied to, or a loss to the school they chose.</p>') +
+    '</section>';
+
+    const home = all.filter(x => x.state === s.school.state).sort((a, b) => b.prestige - a.prestige);
+    const homeCard = '<section class="card span-2">' +
+      '<div class="card-head"><h2>Division I schools in ' + esc((G.stateByCode(s.school.state) || {}).name || s.school.state) + '</h2><span class="muted small">' + plural(home.length, 'school') + ', your closest competition for in-state students</span></div>' +
+      (home.length ? schoolTable(home) : '<p class="muted">No Division I schools in your state. In-state students are yours to win.</p>') +
+    '</section>';
+
+    const confs = G.CONFERENCES.filter(c => c.div === 'D1').sort((a, b) => b.tv - a.tv);
+    const q = ui.compSearch.trim().toLowerCase();
+    const list = all.filter(x => (ui.compConf === 'all' || x.conf === ui.compConf) &&
+      (!q || (x.name + ' ' + x.nick + ' ' + x.city + ' ' + x.state).toLowerCase().includes(q))).sort((a, b) => b.prestige - a.prestige);
+    const allCard = '<section class="card span-2">' +
+      '<div class="card-head"><h2>All Division I schools</h2><span class="muted small">' + num(list.length) + ' of ' + num(all.length) + '</span></div>' +
+      '<div class="catalog-tools">' +
+        '<select id="comp-conf" data-ui-select="compConf" class="select-view" aria-label="Conference"><option value="all">Every conference</option>' +
+          confs.map(c => '<option value="' + c.id + '"' + (ui.compConf === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select>' +
+        '<input type="search" id="comp-search" class="search" placeholder="Search school, nickname, city or state" value="' + esc(ui.compSearch) + '" aria-label="Search schools">' +
+      '</div>' +
+      (list.length ? schoolTable(list, true) : '<p class="muted">No schools match.</p>') +
+      '<p class="hint">School names, nicknames, conferences and colors come from Wikipedia’s list of NCAA Division I institutions. Academic prestige and athletic ratings are the game’s own estimates.</p>' +
+    '</section>';
+
+    return '<div class="grid">' + stand + lostCard + h2hCard + homeCard + allCard + '</div>';
+  }
+
+  function schoolTable(list, tall) {
+    const s = G.state;
+    return '<div class="table-wrap' + (tall ? ' table-tall' : '') + '"><table class="table"><thead><tr><th>School</th><th>Nickname</th><th>Location</th><th>Conference</th><th>Type</th><th>Football</th><th class="num">Prestige</th><th class="num">Athletics</th><th class="num">Head-to-head</th></tr></thead><tbody>' +
+      list.map(x => {
+        const h = (s.h2h || {})[x.id];
+        return '<tr><td>' + schoolLabel(x, 22) + '</td><td class="small">' + esc(x.nick) + '</td><td class="small">' + esc(x.city) + ', ' + x.state + '</td><td class="small">' + esc(confShort(x.conf)) + '</td>' +
+          '<td class="small">' + (x.pub ? 'Public' : 'Private') + '</td><td class="small">' + (x.fb || '—') + '</td>' +
+          '<td class="num">' + x.prestige + '</td><td class="num">' + x.ath + '</td><td class="num">' + (h ? h[0] + '–' + h[1] : '<span class="muted">—</span>') + '</td></tr>';
+      }).join('') +
+    '</tbody></table></div>';
   }
 
   // ---------- majors ----------
@@ -1250,7 +1359,8 @@
     const divisionCard = '<section class="card">' +
       '<div class="card-head"><h2>' + div.label + ' · ' + esc(conf.name) + '</h2>' +
         (ath.transition ? '<span class="tag tag-bad">Transition: ' + plural(ath.transition, 'year') + ' left</span>' : '<span class="tag tag-good">Full member</span>') + '</div>' +
-      '<p class="hint">' + esc(div.note) + ' Conference rivals: ' + conf.rivals.map(esc).join(', ') + '.</p>' +
+      '<p class="hint">' + esc(div.note) + '</p>' +
+      '<div class="members">' + conf.members.map(G.schoolById).sort((a, b) => b.base - a.base).map(x => '<span class="member" title="' + esc(x.name + (x.nick ? ' ' + x.nick : '')) + '">' + crest(x, 22) + esc(x.name) + '</span>').join('') + '</div>' +
       '<div class="kv-row">' +
         kv('TV deal', money(conf.tv * (ath.transition ? 0.5 : 1)) + '<small>/yr</small>') +
         kv('Scholarship per roster spot', div.schol ? money(div.schol) : 'None') +
@@ -1266,16 +1376,41 @@
           return '<li><span><b>' + d.label + '</b> <span class="muted small">' + req + '</span></span>' +
             (here ? '<span class="tag tag-good">Current</span>' : '<button class="btn btn-ghost btn-small" data-action="ask-division" data-id="' + id + '">' + (d.rank < div.rank ? 'Move up' : 'Move down') + '</button>') + '</li>';
         }).join('') + '</ul></div>' +
-        '<div><h3 class="sub">' + div.label + ' conferences</h3><ul class="charter-list">' + D.CONFERENCES.filter(c => c.div === ath.division).map(c => {
+        '<div><h3 class="sub">' + div.label + ' conferences</h3><ul class="charter-list conf-list">' + G.CONFERENCES.filter(c => c.div === ath.division).sort((a, b) => b.tv - a.tv).map(c => {
           const here = c.id === ath.conference;
           const chk = G.conferenceCheck(c.id);
-          return '<li><span><b>' + esc(c.name) + '</b> <span class="muted small">' + money(c.tv) + '/yr TV' + (c.minPrestige ? ' · prestige ' + c.minPrestige + '+' : '') + (c.needsFootball ? ' · football required' : '') + '</span></span>' +
+          const top = c.members.map(G.schoolById).sort((a, b) => b.base - a.base).slice(0, 3);
+          return '<li><span><b>' + esc(c.name) + '</b> <span class="muted small">' + plural(c.members.length, 'school') + ' · ' + money(c.tv) + '/yr TV' + (c.minPrestige ? ' · prestige ' + c.minPrestige + '+' : '') + (c.needsFootball ? ' · football required' : '') + '</span>' +
+            '<span class="conf-top">' + top.map(x => crest(x, 18)).join('') + '<span class="muted small">' + top.map(x => esc(x.name)).join(', ') + (c.members.length > 3 ? '…' : '') + '</span></span></span>' +
             (here ? '<span class="tag tag-good">Member</span>' : '<button class="btn btn-ghost btn-small" data-action="join-conference" data-id="' + c.id + '"' + (chk.ok ? '' : ' disabled title="' + esc(chk.reasons[0]) + '"') + '>Join</button>') + '</li>';
         }).join('') + '</ul></div>' +
       '</div>' +
     '</section>';
 
-    return '<div class="stack">' + divisionCard +
+    const withTables = s.sports.filter(id => s.standings && s.standings[id]);
+    if (!withTables.includes(ui.standSport)) ui.standSport = withTables[0];
+    let standings = '';
+    if (withTables.length) {
+      const st = s.standings[ui.standSport];
+      const played = new Map(st.games.map(g => [g[0], g[1]]));
+      const stConf = confById(st.conf);
+      standings = '<section class="card">' +
+        '<div class="card-head"><h2>Last season’s standings</h2><span class="muted small">' + esc(stConf ? stConf.name : '') + '</span></div>' +
+        '<div class="catalog-tools">' + chipGroup('stand-sport', withTables.map(id => [id, G.sportById(id).name]), ui.standSport, 'Sport') + '</div>' +
+        '<div class="table-wrap"><table class="table"><thead><tr><th class="num">#</th><th>Team</th><th class="num">Conference</th><th class="num">Win %</th><th>Against you</th></tr></thead><tbody>' +
+          st.rows.map(([id, w, l], i) => {
+            const you = id === 'you';
+            const x = you ? null : G.schoolById(id);
+            const res = played.has(id) ? (played.get(id) ? '<span class="tone-good">You won</span>' : '<span class="tone-bad">You lost</span>') : '<span class="muted">—</span>';
+            return '<tr' + (you ? ' class="is-sel"' : '') + '><td class="num">' + (i + 1) + '</td><td>' +
+              (you ? '<span class="school">' + ourCrest(22) + '<b>' + esc(s.school.name) + '</b></span>' : schoolLabel(x, 22) + (x.nick ? ' <span class="muted small">' + esc(x.nick) + '</span>' : '')) + '</td>' +
+              '<td class="num">' + w + '–' + l + '</td><td class="num">' + (w + l ? (w / (w + l)).toFixed(3).replace(/^0/, '') : '—') + '</td><td>' + (you ? '' : res) + '</td></tr>';
+          }).join('') +
+        '</tbody></table></div>' +
+      '</section>';
+    }
+
+    return '<div class="stack">' + divisionCard + standings +
       '<section class="card">' +
         '<div class="card-head"><h2>Varsity teams</h2><span class="muted small">' + plural(offered.length, 'program') + ' · ' + cost(offered) + ' a year</span></div>' +
         '<p class="hint">Men’s and women’s teams are separate programs, and recruits only play for their own. Admit recruits with high star ratings to build a roster. Winning teams sell more tickets, build school spirit and lift prestige.</p>' +
@@ -1494,7 +1629,7 @@
     const s = G.state;
     const dP = r.prestigeAfter - r.prestigeBefore;
     const sportsRows = r.sports.length
-      ? '<ul class="report-sports">' + r.sports.map(x => '<li><span>' + esc(x.name) + '</span><span class="record ' + (x.w >= x.l ? 'tone-good' : 'tone-bad') + '">' + x.w + '–' + x.l + '</span></li>').join('') + '</ul>'
+      ? '<ul class="report-sports">' + r.sports.map(x => '<li><span>' + esc(x.name) + (x.teams > 1 ? ' <span class="muted small">' + (x.champ ? '🏆 champion' : ordinal(x.place) + ' of ' + x.teams) + '</span>' : '') + '</span><span class="record ' + (x.w >= x.l ? 'tone-good' : 'tone-bad') + '">' + x.w + '–' + x.l + '</span></li>').join('') + '</ul>'
       : '<p class="muted">No varsity teams this year.</p>';
     const events = r.events.slice().sort((a, b) => (Math.abs(b.prestige) * 10 + Math.abs(b.buzz) + Math.abs(b.money) / 5e5) - (Math.abs(a.prestige) * 10 + Math.abs(a.buzz) + Math.abs(a.money) / 5e5));
     const shown = events.slice(0, 12);
@@ -1529,6 +1664,11 @@
               r.staffRead && r.staffRead.read ? '<b>Staff</b> read ' + plural(r.staffRead.read, 'leftover file') + ' (' + r.staffRead.admit + ' admitted, ' + r.staffRead.hold + ' waitlisted, ' + r.staffRead.deny + ' denied).' : '',
               r.outcome && r.outcome.graduated ? '<b>Class of ' + r.outcome.year + ':</b> ' + pct(r.outcome.gradRate) + ' graduated, ' + pct(r.outcome.placed) + ' employed or in grad school, median starting salary ' + money(r.outcome.salary) + '.' : ''
             ].filter(Boolean).join('<br>') + '</p>'
+          : '') +
+        (r.lostTo && r.lostTo.length
+          ? '<section class="report-events"><h3>Where admits who said no went</h3><p class="lost-list">' +
+              r.lostTo.slice(0, 6).map(([id, n]) => '<span class="member">' + crest(G.schoolById(id), 20) + esc(G.schoolById(id).name) + ' <b>' + n + '</b></span>').join('') +
+              (r.declined ? '<span class="muted small">' + plural(r.declined, 'admit') + ' chose another school</span>' : '') + '</p></section>'
           : '') +
         '<section class="report-events"><h3>Campus headlines</h3>' +
           (shown.length
@@ -1626,14 +1766,14 @@
         body: '<p>' + esc(d.note) + '</p>' + (chk.up
           ? '<p>You pay a ' + money(d.fee) + ' membership fee and spend ' + plural(d.transition, 'year') + ' in transition: no conference titles and half the TV money. Athletic scholarships cost ' + money(d.schol) + ' per roster spot each year.</p>'
           : '<p>You’ll save on scholarships, but lose TV money and the best recruits.</p>') +
-          '<p>You’ll join the ' + esc(D.CONFERENCES.filter(c => c.div === target).sort((a, b) => a.minPrestige - b.minPrestige)[0].name) + '.</p>',
+          '<p>You’ll join the ' + esc(G.defaultConference(target).name) + '.</p>',
         confirmLabel: chk.up ? 'Move up' : 'Move down', danger: !chk.up,
         onConfirm: () => { G.changeDivision(target); render(); toast('Welcome to ' + d.label + '.'); }
       });
     },
     'join-conference': el => {
       const chk = G.conferenceCheck(el.dataset.id);
-      const c = D.CONFERENCES.find(x => x.id === el.dataset.id);
+      const c = confById(el.dataset.id);
       if (!chk.ok) { toast(chk.reasons[0]); return; }
       showModal({
         title: 'Join the ' + esc(c.name) + '?',
@@ -1691,6 +1831,8 @@
     },
     'merit-add': () => { G.addMeritRule(); render(); },
     'merit-remove': el => { G.removeMeritRule(+el.dataset.i); render(); },
+    'stand-sport': el => { ui.standSport = el.dataset.id; render(); },
+    'comp-conf': el => { ui.compConf = el.dataset.id; render(); },
     'major-area': el => { ui.majorArea = el.dataset.id; render(); },
     'add-major': el => { G.addMajor(el.dataset.id); render(); toast('Opened ' + G.majorById(el.dataset.id).name + '. Schedule classes for it in Classes.'); },
     'goto-dept': el => { ui.classDept = el.dataset.id; ui.tab = 'classes'; render(); scrollToCatalog(); },
@@ -1818,6 +1960,9 @@
       ui.search = t.value;
       ui.page = 0;
       refreshAppTable();
+    } else if (t.id === 'comp-search') {
+      ui.compSearch = t.value;
+      renderKeepFocus('comp-search');
     } else if (t.id === 'major-search') {
       ui.majorSearch = t.value;
       renderKeepFocus('major-search');
