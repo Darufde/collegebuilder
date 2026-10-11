@@ -493,17 +493,13 @@
       note: 'Full scholarships, national TV and the biggest stage in college sports.' }
   };
 
-  // Fictional conferences. tv = yearly media payout. minPrestige and needsFootball gate invitations.
+  // Fictional Division II and III conferences. Division I uses the real conferences in js/schools.js.
+  // tv = yearly media payout. minPrestige and needsFootball gate invitations.
   const CONFERENCES = [
     { id: 'heartland', name: 'Heartland Athletic Conference', div: 'D3', tv: 0, minPrestige: 0, needsFootball: false, rivals: ['Prairie View College', 'Millbrook College', 'St. Anselm University', 'Oak Hollow College'] },
     { id: 'lal', name: 'Liberal Arts Athletic League', div: 'D3', tv: 100000, minPrestige: 50, needsFootball: false, rivals: ['Whitmore College', 'Ashbury College', 'Kenwood College', 'Halsey College'] },
     { id: 'greatplains', name: 'Great Plains Conference', div: 'D2', tv: 300000, minPrestige: 0, needsFootball: false, rivals: ['Western Plains University', 'Cobalt State', 'Red River University', 'Northfield State'] },
-    { id: 'coastal', name: 'Coastal Valley Conference', div: 'D2', tv: 600000, minPrestige: 45, needsFootball: false, rivals: ['Bayshore University', 'Tidewater State', 'Seacliff University', 'Palmetto Bay College'] },
-    { id: 'frontier', name: 'Frontier Conference', div: 'D1', tv: 2000000, minPrestige: 40, needsFootball: false, rivals: ['High Desert University', 'Canyon State', 'Silver Basin University', 'Ridgeline State'] },
-    { id: 'atlantic', name: 'Atlantic Metro Conference', div: 'D1', tv: 5000000, minPrestige: 55, needsFootball: false, rivals: ['Harborview University', 'Metro Tech', 'Gotham State', 'Liberty Point University'] },
-    { id: 'mtnpac', name: 'Mountain Pacific Conference', div: 'D1', tv: 12000000, minPrestige: 65, needsFootball: true, rivals: ['Cascade State', 'Pacific Crest University', 'Summit State', 'Redwood University'] },
-    { id: 'premier', name: 'Premier Ten Conference', div: 'D1', tv: 30000000, minPrestige: 75, needsFootball: true, rivals: ['Great Lakes University', 'Ironwood State', 'Capital State University', 'Northern Plains University'] },
-    { id: 'southern', name: 'Southern Power Conference', div: 'D1', tv: 38000000, minPrestige: 80, needsFootball: true, rivals: ['Magnolia State', 'Bayou University', 'Delta Tech', 'Piedmont State University'] }
+    { id: 'coastal', name: 'Coastal Valley Conference', div: 'D2', tv: 600000, minPrestige: 45, needsFootball: false, rivals: ['Bayshore University', 'Tidewater State', 'Seacliff University', 'Palmetto Bay College'] }
   ];
 
   // Admissions office: readers you hire and what recruiting costs.
