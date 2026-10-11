@@ -13,14 +13,14 @@ Open `index.html` in any modern browser. There's no install or build step. Your 
    - Public schools start with cheaper in-state tuition and get state funding for every in-state student.
    - Private schools start with one price for everyone, larger alumni donations and a bigger aid budget.
 3. **Admissions cycle.** Each year brings a new pool of applicants. Every application shows:
-   - name, hometown, gender, and whether they're in-state, out-of-state or international (international students have names from their home country)
+   - name, hometown, gender, and whether they're in-state, out-of-state or international. Students come from 340+ cities across all 50 states, DC and Puerto Rico (weighted by population) and 160+ cities in 47 countries, with names from their home country
    - unweighted GPA, weighted GPA (built from their finished APs and honors classes), AP classes with exam scores (senior-year APs show as in progress), SAT or ACT (or test-optional). Grades, test scores and AP scores line up with each other
    - intended major, sport and star rating, and activities (each feeds a part of campus life)
    - family income, what the family can pay, first-generation and legacy status, and interest in Greek life
    - any standout talent (National Merit Scholar, startup founder, social media creator, junior national athlete...) or a disciplinary record
    - an Academic Index (0–100), the aid package, and the chance they'll enroll if admitted
 
-   Stamp each file **Admit**, **Waitlist** or **Deny** from the folder or with the A/W/D buttons on each row, and offer individual scholarships. Filter the pool by in-state, out-of-state, international, women, men, athletes, standouts, legacies, first-gen and more. Bulk tools (admit by index, admit the top N, waitlist by index, waitlist all the rest, deny below an index) apply to whatever view you're in.
+   Stamp each file **Admit**, **Waitlist** or **Deny** from the folder or with the A/W/D buttons on each row. The folder jumps straight to the next pending file after each decision. Filter the pool by in-state, out-of-state, international, women, men, athletes, standouts, legacies, first-gen and more. Bulk tools (admit by index, admit the top N, waitlist by index, waitlist all the rest, deny below an index) apply to whatever view you're in.
 4. **Early round.** If you offer Early Decision or Early Action (set in Office, takes effect next cycle), each cycle opens with just the early applicants. Admit, defer or deny them, then **Send early decisions**:
    - Early Decision is binding: admits commit and claim a seat, unless their aid package leaves the family short.
    - Early Action admits aren't bound but are more likely to say yes.
@@ -44,7 +44,7 @@ Open `index.html` in any modern browser. There's no install or build step. Your 
      - Move between Division III, II and I. Higher divisions need more programs, pay athletic scholarships and charge a membership fee with a transition period, but bring better recruits, more ticket money and exposure.
      - Join conferences with TV deals, win conference titles, make postseason runs and play rivalry games. Top conferences require prestige and a football program.
      - Title IX: if the share of women among your athletes drifts too far from your student body's, expect complaints, fines and investigations, and you can't move up a division.
-   - **Tuition & aid**: set in-state and out-of-state tuition, room and board, the share of need you meet, and merit scholarships. See the net price for every income bracket.
+   - **Tuition & aid**: set in-state and out-of-state tuition, room and board, and the share of need you meet. Merit scholarships are automatic: set tiers like "GPA 3.5+ gets $5,000 a year" or "out-of-state students with SAT 1400+ get $10,000" (GPA, weighted GPA, Academic Index, SAT or ACT, for everyone or a group), and each student gets the best award they qualify for. See the net price for every income bracket.
 9. **End the season.** Admitted students decide, the waitlist fills open spots, seniors graduate, freshmen rush, teams play, your students make headlines, the budget settles and prestige moves. Then the next cycle opens.
 
 It's a sandbox. There's no game over, even if the budget goes negative.

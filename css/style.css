@@ -615,8 +615,6 @@ input[type="color"] { width: 40px; height: 30px; padding: 0; border: 1px solid v
 .ledger-folder { max-width: 360px; }
 .ledger-folder td { padding: .15rem 0; border-bottom: 1px dotted var(--folder-line); }
 .ledger-sub td { font-weight: 700; }
-.schol { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin-top: .7rem; }
-.schol .chip-btn { padding: .25rem .65rem; }
 
 /* ---------- catalogs: majors, courses, housing, Greek ---------- */
 .catalog-tools { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; justify-content: space-between; margin-bottom: .9rem; }
@@ -761,3 +759,5 @@ input[type="color"] { width: 40px; height: 30px; padding: 0; border: 1px solid v
 .camp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.2rem, 1fr)); }
 .grid-tight { gap: 1.25rem; margin-top: .5rem; }
 .report-notes { padding: .6rem .8rem; background: var(--paper-2); border-radius: var(--radius); }
+.merit-table select, .merit-table input { min-width: 7rem; padding: .35rem .5rem; }
+.merit-table input[type="number"] { max-width: 9rem; }

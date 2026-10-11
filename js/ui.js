@@ -24,7 +24,6 @@
     navIds: [],
     autoAdvance: true,
     stampAnim: false,
-    advanceTimer: null,
     classDept: 'gen',
     majorArea: 'all',
     majorSearch: '',
@@ -642,7 +641,6 @@
     const pkg = G.aidPackage(a);
     const hook = a.hook ? D.HOOKS[a.hook] : null;
     const tuition = G.tuitionFor(a);
-    const scholOpts = [[0, 'None'], [5000, '$5K'], [10000, '$10K'], [20000, '$20K'], [tuition, 'Full tuition']];
     const actTag = name => { const t = D.ACTIVITIES.find(x => x[0] === name); return t ? D.LIFE_TAGS[t[1]] : ''; };
     const line = (label, value, cls) => '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td>' + label + '</td><td class="num">' + value + '</td></tr>';
 
@@ -699,16 +697,13 @@
               line('Tuition (' + residencyWord(a).toLowerCase() + ')', dollars(tuition)) +
               line('Room & board', dollars(s.roomBoard)) +
               line('Cost of attendance', dollars(pkg.coa), 'ledger-sub') +
-              (pkg.merit ? line('Merit scholarship', '−' + dollars(pkg.merit)) : '') +
-              (pkg.scholarship ? line('Your scholarship offer', '−' + dollars(pkg.scholarship)) : '') +
+              (pkg.merit ? line('Merit scholarship <span class="muted">(' + esc(G.meritRuleText(pkg.meritRule)) + ')</span>', '−' + dollars(pkg.merit)) : '') +
               (pkg.needGrant ? line('Need-based grant', '−' + dollars(pkg.needGrant)) : '') +
               line('Net price', dollars(pkg.net), 'ledger-sub') +
               line('Family can pay', dollars(a.efc)) +
               line(pkg.gap > 0 ? 'Shortfall' : 'Affordable', pkg.gap > 0 ? '<span class="tone-bad">' + dollars(pkg.gap) + '</span>' : '<span class="tone-good">Yes</span>') +
             '</tbody></table>' +
-            '<div class="schol" role="group" aria-label="Scholarship offer"><span class="small">Offer a scholarship (per year):</span>' +
-              scholOpts.map(([amt, label]) => '<button class="chip-btn' + ((a.scholarship || 0) === amt ? ' is-on' : '') + '" data-action="scholarship" data-amt="' + amt + '">' + label + '</button>').join('') +
-            '</div>' +
+            (pkg.merit ? '' : '<p class="hint">No merit scholarship. Awards come from your rules in Tuition & aid.</p>') +
           '</section>' +
           '<section class="folder-sec">' +
             '<h3>Enroll chance if admitted <span class="pill tone-' + yieldTone(p) + '">' + yieldWord(p) + ' ' + pct(p) + '</span></h3>' +
@@ -724,14 +719,13 @@
               '<button class="btn btn-wait" data-action="decide" data-d="waitlist"' + (a.decision === 'waitlist' || a.decision === 'defer' ? ' aria-pressed="true"' : '') + '><kbd>W</kbd> ' + holdWord() + '</button>' +
               '<button class="btn btn-deny" data-action="decide" data-d="deny"' + (a.decision === 'deny' ? ' aria-pressed="true"' : '') + '><kbd>D</kbd> Deny</button>' +
               (a.decision !== 'pending' ? '<button class="btn btn-ghost btn-small" data-action="decide" data-d="pending">Undo</button>' : '')) +
-          '<label class="toggle" for="auto-advance"><input type="checkbox" id="auto-advance" data-ui-check="autoAdvance"' + (ui.autoAdvance ? ' checked' : '') + '> Next file after stamping</label>' +
+          '<label class="toggle" for="auto-advance"><input type="checkbox" id="auto-advance" data-ui-check="autoAdvance"' + (ui.autoAdvance ? ' checked' : '') + '> Go to the next file after each decision</label>' +
         '</div>' +
       '</aside>';
     ui.stampAnim = false;
   }
 
   function openApp(id, refreshNav) {
-    clearTimeout(ui.advanceTimer);
     if (refreshNav || !ui.navIds.includes(id)) ui.navIds = currentList().map(a => a.id);
     const keepScroll = ui.openId === id;
     const body = drawerRoot.querySelector('.drawer-body');
@@ -744,7 +738,6 @@
     if (keepScroll) { const b = drawerRoot.querySelector('.drawer-body'); if (b) b.scrollTop = top; }
   }
   function closeApp() {
-    clearTimeout(ui.advanceTimer);
     ui.openId = null;
     renderDrawer();
     render();
@@ -759,25 +752,25 @@
     const s = G.state;
     const a = s.applicants.find(x => x.id === ui.openId);
     if (!a) return;
-    const wasPending = a.decision === 'pending';
     if (!G.setDecision(a, d)) return;
     d = a.decision;
     G.save();
-    ui.stampAnim = d !== 'pending';
-    renderDrawer();
-    refreshAppTable();
-    refreshStatbar();
-    if (ui.autoAdvance && wasPending && d !== 'pending') {
-      const pos = ui.navIds.indexOf(a.id);
-      const next = ui.navIds.slice(pos + 1).find(id => {
-        const x = s.applicants.find(y => y.id === id);
-        return x && x.decision === 'pending';
-      });
-      if (next != null) {
-        const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        ui.advanceTimer = setTimeout(() => { if (ui.openId === a.id) openApp(next); }, reduce ? 250 : 650);
-      }
+    if (!ui.autoAdvance || d === 'pending') {
+      ui.stampAnim = d !== 'pending';
+      renderDrawer();
+      refreshAppTable();
+      refreshStatbar();
+      return;
     }
+    // Move straight on to the next undecided file: forward first, then wrap around to any skipped earlier.
+    const byId = new Map(s.applicants.map(x => [x.id, x]));
+    const open = id => { const x = byId.get(id); return x && x.decision === 'pending' && !G.isLocked(x); };
+    const pos = ui.navIds.indexOf(a.id);
+    const next = ui.navIds.slice(pos + 1).find(open) || ui.navIds.slice(0, Math.max(0, pos)).find(open);
+    refreshStatbar();
+    toast(DECISION_LABEL[d] + ' ' + a.name + (next == null ? '. No pending files left in this list.' : '.'));
+    if (next != null) openApp(next);
+    else closeApp();
   }
 
   function refreshAppTable() {
@@ -1331,13 +1324,44 @@
       '<div class="card-head"><h2>Financial aid policy</h2></div>' +
       '<div class="fields">' +
         numField('aid-need', 'Need met (%)', s.aid.needMet, 0, 100, 5, 'aid.needMet', 100) +
-        numField('aid-merit', 'Merit award ($/yr)', s.aid.meritAmount, 0, 100000, 500, 'aid.meritAmount') +
-        numField('aid-merit-idx', 'Merit cutoff (index)', s.aid.meritIdx, 0, 100, 1, 'aid.meritIdx') +
       '</div>' +
-      '<p class="hint">Need is what a family can’t pay toward the cost of attendance. Meeting more of it lets low-income students enroll; merit money lures strong students away from rivals. You can also offer an individual scholarship from any application. Aid is locked in for all four years.</p>' +
+      '<p class="hint">Need is what a family can’t pay toward the cost of attendance. Meeting more of it lets low-income students enroll. Merit scholarships below are awarded automatically and count toward need first. Aid is locked in for all four years.</p>' +
     '</section>';
 
-    const probe = (efc, inState) => G.aidPackage({ idx: 60, efc, stateCode: inState ? s.school.state : null, intl: false, scholarship: 0 });
+    // Who each rule pays this cycle: a student gets only their single best award.
+    const ruleHits = s.aid.rules.map(() => ({ n: 0, admits: 0 }));
+    for (const a of s.applicants) {
+      const r = G.meritFor(a);
+      if (!r) continue;
+      const i = s.aid.rules.indexOf(r);
+      ruleHits[i].n++;
+      if (a.decision === 'admit') ruleHits[i].admits += G.enrollChance(a);
+    }
+    const metricOpts = Object.entries(G.MERIT_METRICS).map(([k, m]) => [k, m.label]);
+    const whoOpts = Object.entries(G.MERIT_WHO).map(([k, w]) => [k, w.label]);
+    const opt = (list, v) => list.map(([k, l]) => '<option value="' + k + '"' + (k === v ? ' selected' : '') + '>' + l + '</option>').join('');
+    const merit = '<section class="card span-2">' +
+      '<div class="card-head"><h2>Merit scholarships</h2><button class="btn btn-primary btn-small" data-action="merit-add">Add a scholarship tier</button></div>' +
+      '<p class="hint">Set the rules and every applicant who qualifies is offered the money automatically, for all four years. A student gets the single best award they qualify for, not the sum. Merit money makes strong students more likely to enroll.</p>' +
+      (s.aid.rules.length
+        ? '<div class="table-wrap"><table class="table merit-table"><thead><tr><th>Who</th><th>Measure</th><th>At least</th><th>Award per year</th><th class="num">Applicants who get it</th><th class="num">Projected yearly cost</th><th></th></tr></thead><tbody>' +
+          s.aid.rules.map((r, i) => {
+            const m = G.MERIT_METRICS[r.metric];
+            return '<tr>' +
+              '<td><select data-merit="' + i + '" data-key="who" aria-label="Who qualifies">' + opt(whoOpts, r.who || 'all') + '</select></td>' +
+              '<td><select data-merit="' + i + '" data-key="metric" aria-label="Measure">' + opt(metricOpts, r.metric) + '</select></td>' +
+              '<td><input type="number" data-merit="' + i + '" data-key="min" value="' + r.min + '" min="' + m.min + '" max="' + m.max + '" step="' + m.step + '" aria-label="Minimum ' + m.label + '"></td>' +
+              '<td><input type="number" data-merit="' + i + '" data-key="amount" value="' + r.amount + '" min="0" max="200000" step="500" aria-label="Award per year"></td>' +
+              '<td class="num">' + num(ruleHits[i].n) + '</td>' +
+              '<td class="num">' + money(ruleHits[i].admits * r.amount) + ' <span class="muted small">for this class</span></td>' +
+              '<td class="act"><button class="btn btn-ghost btn-small" data-action="merit-remove" data-i="' + i + '">Remove</button></td>' +
+            '</tr>';
+          }).join('') +
+          '</tbody></table></div>'
+        : '<p class="muted">No merit scholarships. Add a tier, like GPA 3.5 and up gets $5,000 a year.</p>') +
+    '</section>';
+
+    const probe = (efc, inState) => G.aidPackage({ idx: 0, gpa: 0, wgpa: 0, efc, stateCode: inState ? s.school.state : null, intl: false });
     const rows = D.INCOME.map(b => {
       const efc = Math.round((b.efc[0] + b.efc[1]) / 2);
       const i = probe(efc, true), o = probe(efc, false);
@@ -1345,7 +1369,7 @@
       return '<tr><td>' + esc(b.label) + ' <span class="muted small">can pay ~' + money(efc) + '</span></td>' + cell(i) + cell(o) + '</tr>';
     }).join('');
     const netTable = '<section class="card">' +
-      '<div class="card-head"><h2>Net price by family income</h2><span class="muted small">For a typical student below the merit cutoff</span></div>' +
+      '<div class="card-head"><h2>Net price by family income</h2><span class="muted small">For a student who doesn’t qualify for merit aid</span></div>' +
       '<div class="table-wrap"><table class="table"><thead><tr><th>Family income</th><th class="num">In-state</th><th class="num">Out-of-state</th></tr></thead><tbody>' +
         '<tr><td><b>Cost of attendance</b></td><td class="num">' + money(s.tuitionIn + s.roomBoard) + '</td><td class="num">' + money(s.tuitionOut + s.roomBoard) + '</td></tr>' +
         rows +
@@ -1364,7 +1388,7 @@
       '<p class="hint">The discount rate is the share of sticker-price tuition you give back as aid.</p>' +
     '</section>';
 
-    return '<div class="grid">' + tuition + policy + netTable + spend + '</div>';
+    return '<div class="grid">' + tuition + policy + merit + netTable + spend + '</div>';
   }
 
   // ---------- modals ----------
@@ -1637,10 +1661,6 @@
     'prev-app': () => stepApp(-1),
     'next-app': () => stepApp(1),
     'decide': el => decide(el.dataset.d),
-    'scholarship': el => {
-      G.setScholarship(ui.openId, +el.dataset.amt);
-      openApp(ui.openId);
-    },
     'bulk-admit': () => {
       const n = bulkDecide(a => a.idx >= ui.bulkAdmit, 'admit');
       toast(n ? 'Admitted ' + plural(n, 'applicant') + '.' : 'No pending files in this view at that index.');
@@ -1669,6 +1689,8 @@
       const n = bulkDecide(a => top.has(a.id), 'admit');
       toast(n ? 'Admitted the top ' + plural(n, 'applicant') + '.' : 'No pending files in this view.');
     },
+    'merit-add': () => { G.addMeritRule(); render(); },
+    'merit-remove': el => { G.removeMeritRule(+el.dataset.i); render(); },
     'major-area': el => { ui.majorArea = el.dataset.id; render(); },
     'add-major': el => { G.addMajor(el.dataset.id); render(); toast('Opened ' + G.majorById(el.dataset.id).name + '. Schedule classes for it in Classes.'); },
     'goto-dept': el => { ui.classDept = el.dataset.id; ui.tab = 'classes'; render(); scrollToCatalog(); },
@@ -1822,6 +1844,11 @@
       if (t.value === '' || !Number.isFinite(v)) { render(); return; }
       setPath(G.state, t.dataset.bind, Math.max(min, Math.min(max, v)) / scale);
       G.save();
+      render();
+    } else if (t.dataset.merit != null) {
+      const key = t.dataset.key;
+      if ((key === 'min' || key === 'amount') && (t.value === '' || !Number.isFinite(+t.value))) { render(); return; }
+      G.updateMeritRule(+t.dataset.merit, key, key === 'min' || key === 'amount' ? +t.value : t.value);
       render();
     } else if (t.dataset.bindCheck) {
       setPath(G.state, t.dataset.bindCheck, t.checked);

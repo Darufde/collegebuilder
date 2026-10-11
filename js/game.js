@@ -14,17 +14,17 @@
   const CONFERENCE_EXIT_FEE = 500000;
   const HOOK_RATE = 0.07;
   // Bump when makeApplicant changes: a saved pool can only be rebuilt by the generator that made it.
-  const POOL_GEN = 3;
+  const POOL_GEN = 4;
 
   const START = {
     public: {
       budget: 25e6, prestige: 35, tuitionIn: 11000, tuitionOut: 28000, roomBoard: 11500, targetClass: 90,
-      aid: { needMet: 0.4, meritAmount: 3000, meritIdx: 75 }, alumni: 4000, dorms: ['traditional', 'traditional'],
+      aid: { needMet: 0.4, rules: [{ metric: 'gpa', min: 3.5, amount: 2000, who: 'all' }, { metric: 'idx', min: 80, amount: 5000, who: 'all' }] }, alumni: 4000, dorms: ['traditional', 'traditional'],
       early: { ed: false, ea: true }, division: 'D2'
     },
     private: {
       budget: 40e6, prestige: 45, tuitionIn: 42000, tuitionOut: 42000, roomBoard: 14000, targetClass: 70,
-      aid: { needMet: 0.7, meritAmount: 8000, meritIdx: 72 }, alumni: 3000, dorms: ['traditional', 'suites'],
+      aid: { needMet: 0.7, rules: [{ metric: 'gpa', min: 3.5, amount: 6000, who: 'all' }, { metric: 'idx', min: 75, amount: 12000, who: 'all' }] }, alumni: 3000, dorms: ['traditional', 'suites'],
       early: { ed: true, ea: false }, division: 'D3'
     }
   };
@@ -229,14 +229,74 @@
   function aidPackage(a) {
     const s = state;
     const coa = tuitionFor(a) + s.roomBoard;
-    const merit = a.idx >= s.aid.meritIdx ? s.aid.meritAmount : 0;
-    const scholarship = a.scholarship || 0;
+    const best = meritFor(a);
+    const merit = Math.min(best ? best.amount : 0, coa);
     const need = Math.max(0, coa - a.efc);
-    const needGrant = Math.max(0, need - merit - scholarship) * s.aid.needMet;
-    const total = Math.min(coa, Math.round((merit + scholarship + needGrant) / 100) * 100);
+    const needGrant = Math.max(0, need - merit) * s.aid.needMet;
+    const total = Math.min(coa, Math.round((merit + needGrant) / 100) * 100);
     const net = coa - total;
     const gap = Math.max(0, net - a.efc);
-    return { coa, merit: Math.min(merit, coa), scholarship, needGrant: Math.round(needGrant), need, total, net, gap };
+    return { coa, merit, meritRule: best, needGrant: Math.round(needGrant), need, total, net, gap };
+  }
+
+  // ---------- merit scholarships ----------
+  // The office awards merit aid automatically from your rules. A student gets the single best award they qualify for.
+  const MERIT_METRICS = {
+    gpa: { label: 'GPA', value: a => a.gpa, min: 0, max: 4, step: 0.01, start: 3.5, fmt: v => v.toFixed(2) },
+    wgpa: { label: 'Weighted GPA', value: a => a.wgpa, min: 0, max: 5, step: 0.01, start: 4, fmt: v => v.toFixed(2) },
+    idx: { label: 'Academic Index', value: a => a.idx, min: 0, max: 100, step: 1, start: 75, fmt: v => String(v) },
+    sat: { label: 'SAT', value: a => a.sat, min: 400, max: 1600, step: 10, start: 1300, fmt: v => String(v) },
+    act: { label: 'ACT', value: a => a.act, min: 1, max: 36, step: 1, start: 28, fmt: v => String(v) }
+  };
+  const MERIT_WHO = {
+    all: { label: 'Everyone', test: () => true },
+    instate: { label: 'In-state', test: a => !a.intl && a.stateCode === state.school.state },
+    outstate: { label: 'Out-of-state', test: a => !a.intl && a.stateCode !== state.school.state },
+    intl: { label: 'International', test: a => !!a.intl },
+    firstgen: { label: 'First-generation', test: a => !!a.firstGen },
+    athlete: { label: 'Recruited athletes', test: a => !!a.sport && state.sports.includes(a.sport) }
+  };
+  function meritFor(a) {
+    let best = null;
+    for (const r of state.aid.rules || []) {
+      const m = MERIT_METRICS[r.metric], w = MERIT_WHO[r.who] || MERIT_WHO.all;
+      if (!m || !r.amount) continue;
+      const v = m.value(a);
+      if (v == null || v < r.min || !w.test(a)) continue;
+      if (!best || r.amount > best.amount) best = r;
+    }
+    return best;
+  }
+  function addMeritRule() {
+    state.aid.rules.push({ metric: 'gpa', min: 3.75, amount: 5000, who: 'all' });
+    save();
+  }
+  function updateMeritRule(i, key, value) {
+    const r = state.aid.rules[i];
+    if (!r) return;
+    if (key === 'metric') {
+      const m = MERIT_METRICS[value];
+      if (!m) return;
+      if (r.metric !== value) r.min = m.start;
+      r.metric = value;
+    } else if (key === 'who') {
+      if (MERIT_WHO[value]) r.who = value;
+    } else if (key === 'min') {
+      const m = MERIT_METRICS[r.metric];
+      r.min = clamp(Math.round(value / m.step) * m.step, m.min, m.max);
+      r.min = Math.round(r.min * 100) / 100;
+    } else if (key === 'amount') {
+      r.amount = clamp(Math.round(value / 100) * 100, 0, 200000);
+    }
+    save();
+  }
+  function removeMeritRule(i) {
+    state.aid.rules.splice(i, 1);
+    save();
+  }
+  function meritRuleText(r) {
+    const m = MERIT_METRICS[r.metric];
+    return (r.who && r.who !== 'all' ? MERIT_WHO[r.who].label + ', ' : '') + m.label + ' ' + m.fmt(r.min) + '+';
   }
 
   // ---------- applicant pool ----------
@@ -253,8 +313,8 @@
     let w0 = 0, w1 = 0;
     for (const st of D.STATES) {
       if (st.code === home) continue;
-      w0 += st.cities.length;
-      w1 += st.cities.length * (rec.states.includes(st.code) ? 3 : 1);
+      w0 += st.pop;
+      w1 += st.pop * (rec.states.includes(st.code) ? 3 : 1);
     }
     const campaign = w1 / w0;
     const intlRate = clamp((0.07 + s.prestige / 1500) * (1 + rec.countries.length * 0.25), 0, 0.45);
@@ -265,7 +325,7 @@
   // Sticker shock for a typical middle-income family, after aid.
   function typicalNetPrice() {
     const s = state;
-    const probe = { idx: 60, efc: 12000, stateCode: s.school.state, intl: false, scholarship: 0 };
+    const probe = { idx: 60, efc: 12000, stateCode: s.school.state, intl: false };
     const inNet = aidPackage(probe).net;
     const outNet = aidPackage(Object.assign({}, probe, { stateCode: null })).net;
     const mix = residencyMix();
@@ -328,7 +388,7 @@
       intl = true;
     } else {
       let st;
-      do st = weightedPick(D.STATES, x => x.cities.length * (mix.states && mix.states.includes(x.code) ? 3 : 1)); while (st.code === s.school.state);
+      do st = weightedPick(D.STATES, x => x.pop * (mix.states && mix.states.includes(x.code) ? 3 : 1)); while (st.code === s.school.state);
       city = pick(st.cities); region = st.code; stateCode = st.code;
     }
 
@@ -440,7 +500,6 @@
       income, efc, firstGen, legacy, hook,
       greekInt: rng() < greekP,
       round,
-      scholarship: 0,
       decision: 'pending'
     };
     a.idx = academicIndex(a);
@@ -500,8 +559,7 @@
     p *= 0.95 + outcomeScore() / 1200;
     const pkg = aidPackage(a);
     p *= pkg.gap <= 0 ? 1.15 : clamp(1.1 - pkg.gap / 40000, 0.15, 1.1);
-    const gift = pkg.merit + pkg.scholarship;
-    if (gift > 0) p *= 1 + Math.min(0.4, gift / 40000);
+    if (pkg.merit > 0) p *= 1 + Math.min(0.4, pkg.merit / 40000);
     p *= 0.85 + m.life.score / 100 * 0.3;
     if (m.housing.freshBeds < s.targetClass) p *= 0.75 + 0.25 * m.housing.freshBeds / Math.max(1, s.targetClass);
     if (!a.intl && a.stateCode === s.school.state) p *= 1.15;
@@ -540,7 +598,7 @@
     const pkg = aidPackage(a);
     if (pkg.gap > 0) out.push({ tone: pkg.gap > 15000 ? 'bad' : 'warn', text: 'Family is $' + pkg.gap.toLocaleString() + ' a year short of the net price' });
     else out.push({ tone: 'good', text: 'Family can cover the net price' });
-    if (pkg.merit + pkg.scholarship > 0) out.push({ tone: 'good', text: 'Offered $' + (pkg.merit + pkg.scholarship).toLocaleString() + ' a year in merit aid' });
+    if (pkg.merit > 0) out.push({ tone: 'good', text: 'Earns a $' + pkg.merit.toLocaleString() + ' merit scholarship (' + meritRuleText(pkg.meritRule) + ')' });
     if (m.life.score >= 60) out.push({ tone: 'good', text: 'Lively campus (campus life ' + Math.round(m.life.score) + ')' });
     else if (m.life.score < 40) out.push({ tone: 'bad', text: 'Quiet campus (campus life ' + Math.round(m.life.score) + ')' });
     if (m.housing.freshBeds < s.targetClass) out.push({ tone: 'bad', text: 'Not enough dorm beds to guarantee freshman housing' });
@@ -1023,12 +1081,6 @@
   }
 
   // ---------- applicants: per-file actions ----------
-  function setScholarship(id, amount) {
-    const a = state.applicants.find(x => x.id === id);
-    if (!a) return;
-    a.scholarship = Math.max(0, Math.round(amount));
-    save();
-  }
 
   // ---------- money ----------
   function finances(records) {
@@ -1427,7 +1479,7 @@
   function newGame(settings) {
     const cfg = START[settings.type];
     state = {
-      version: 4,
+      version: 5,
       school: {
         name: settings.name, mascot: settings.mascot,
         primary: settings.primary, secondary: settings.secondary,
@@ -1440,7 +1492,7 @@
       tuitionIn: cfg.tuitionIn,
       tuitionOut: cfg.tuitionOut,
       roomBoard: cfg.roomBoard,
-      aid: Object.assign({}, cfg.aid),
+      aid: { needMet: cfg.aid.needMet, rules: cfg.aid.rules.map(r => Object.assign({}, r)) },
       targetClass: cfg.targetClass,
       majors: STARTER_MAJORS.slice(),
       sports: STARTER_SPORTS.slice(),
@@ -1461,7 +1513,7 @@
       lastReport: null
     };
     Object.assign(state, officeDefaults(settings.type));
-    state.version = 4;
+    state.version = 5;
     invalidate();
     for (const m of STARTER_MAJORS) {
       addClass(m, 0, 'standard', true);
@@ -1502,7 +1554,7 @@
   const STUDENT_KEYS = ['id', 'name', 'gender', 'region', 'stateCode', 'intl', 'gpa', 'major', 'sport', 'stars',
     'activities', 'idx', 'income', 'firstGen', 'legacy', 'hook', 'greekInt', 'aid', 'yearInSchool', 'classOf', 'greek'];
   const APPLICANT_KEYS = ['id', 'name', 'gender', 'city', 'region', 'stateCode', 'intl', 'gpa', 'wgpa', 'aps', 'sat', 'act',
-    'major', 'sport', 'stars', 'activities', 'idx', 'income', 'efc', 'firstGen', 'legacy', 'hook', 'greekInt', 'decision', 'scholarship', 'honors', 'round', 'deferred', 'committed', 'flagged'];
+    'major', 'sport', 'stars', 'activities', 'idx', 'income', 'efc', 'firstGen', 'legacy', 'hook', 'greekInt', 'decision', 'scholarship' /* unused since v5 */, 'honors', 'round', 'deferred', 'committed', 'flagged'];
   const NULLABLE = new Set(['sat', 'act', 'sport', 'hook', 'stateCode', 'greek']);
   const BOOL_KEYS = new Set(['intl', 'firstGen', 'legacy', 'greekInt', 'deferred', 'committed', 'flagged']);
   const AP_INDEX = new Map(D.AP_COURSES.map((n, i) => [n, i]));
@@ -1556,7 +1608,6 @@
         out.applicants = null;
         out.decisions = state.applicants.map(a => DECISION_CODE[a.decision] || 'p').join('');
         out.flags = state.applicants.map(flagBits).join('');
-        out.scholarships = state.applicants.filter(a => a.scholarship).map(a => [a.id, a.scholarship]);
       } else {
         out.pool = null;
         out.applicants = state.applicants.map(a => pack(a, APPLICANT_KEYS));
@@ -1585,11 +1636,9 @@
     } else if (st.pool) {
       st.applicants = buildPool(st.pool);
       const codes = st.decisions || '';
-      const schol = new Map(st.scholarships || []);
       const flags = st.flags || '';
       st.applicants.forEach((a, i) => {
         a.decision = DECISION_FROM[codes[i]] || 'pending';
-        a.scholarship = schol.get(a.id) || 0;
         const f = +(flags[i] || 0);
         if (f & 1) a.deferred = true;
         if (f & 2) a.committed = true;
@@ -1637,12 +1686,25 @@
 
   // Bring a save from an earlier version of the game up to date, one version at a time.
   function migrate(st) {
-    if (st.version >= 4) return st;
+    if (st.version >= 5) return st;
     state = st;
     if (!(st.version >= 2)) migrateTo2(st);
     if (st.version < 3) migrateTo3(st);
-    migrateTo4(st);
+    if (st.version < 4) migrateTo4(st);
+    migrateTo5(st);
     return st;
+  }
+
+  // Version 5 replaced the single merit cutoff with automatic scholarship rules and added more hometowns.
+  function migrateTo5(st) {
+    const a = st.aid || {};
+    const rules = a.rules || (a.meritAmount ? [{ metric: 'idx', min: a.meritIdx, amount: a.meritAmount, who: 'all' }] : []);
+    st.aid = { needMet: a.needMet != null ? a.needMet : 0.5, rules };
+    st.version = 5;
+    st.applicants = [];
+    st.pool = null;
+    st.stalePool = true;
+    invalidate();
   }
 
   // Version 4 added early rounds, the admissions staff, recruiting, athletics divisions and career outcomes.
@@ -1689,7 +1751,7 @@
     st.version = 2;
     if (st.tuitionOut == null) st.tuitionOut = st.tuitionIn;
     st.roomBoard = cfg.roomBoard;
-    st.aid = Object.assign({}, cfg.aid);
+    st.aid = { needMet: cfg.aid.needMet, rules: cfg.aid.rules.map(r => Object.assign({}, r)) };
     st.dorms = [];
     st.greek = [];
     st.greekPolicy = 'standard';
@@ -1711,7 +1773,7 @@
       p.greekInt = rng() < 0.25;
       if (p.stateCode === undefined) p.stateCode = null;
     };
-    for (const a of st.applicants) { fill(a); a.scholarship = 0; }
+    for (const a of st.applicants) fill(a);
     for (const s of st.students) { fill(s); s.greek = null; }
     invalidate();
     for (const s of st.students) s.aid = aidPackage(s).total;
@@ -1735,7 +1797,8 @@
     majorById, sportById, deptById, stateByCode, courseCode, tagsOf,
     newGame, load, save, saveNow, flush, peekSave, deleteSave,
     metrics, invalidate, applicantOutlook, residencyMix, typicalNetPrice,
-    academicIndex, enrollChance, enrollFactors, tuitionFor, aidPackage, setScholarship,
+    academicIndex, enrollChance, enrollFactors, tuitionFor, aidPackage,
+    MERIT_METRICS, MERIT_WHO, meritFor, addMeritRule, updateMeritRule, removeMeritRule, meritRuleText,
     classesInDept, totalSeats, seatsNeeded, seatCoverage, classQuality, deptCoverage,
     addClass, removeClass, removeSection, staffDepartment, fillSeatGap,
     addMajor, dropMajor, addSport, cutSport, rosterFor,
