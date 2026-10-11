@@ -11,20 +11,37 @@
   // Course numbers by position in a department's catalog.
   const COURSE_NUMBERS = [101, 201, 301, 401, 250, 350];
   const DINING_PER_RESIDENT = 4500;
+  const CONFERENCE_EXIT_FEE = 500000;
   const HOOK_RATE = 0.07;
   // Bump when makeApplicant changes: a saved pool can only be rebuilt by the generator that made it.
-  const POOL_GEN = 2;
+  const POOL_GEN = 3;
 
   const START = {
     public: {
       budget: 25e6, prestige: 35, tuitionIn: 11000, tuitionOut: 28000, roomBoard: 11500, targetClass: 90,
-      aid: { needMet: 0.4, meritAmount: 3000, meritIdx: 75 }, alumni: 4000, dorms: ['traditional', 'traditional']
+      aid: { needMet: 0.4, meritAmount: 3000, meritIdx: 75 }, alumni: 4000, dorms: ['traditional', 'traditional'],
+      early: { ed: false, ea: true }, division: 'D2'
     },
     private: {
       budget: 40e6, prestige: 45, tuitionIn: 42000, tuitionOut: 42000, roomBoard: 14000, targetClass: 70,
-      aid: { needMet: 0.7, meritAmount: 8000, meritIdx: 72 }, alumni: 3000, dorms: ['traditional', 'suites']
+      aid: { needMet: 0.7, meritAmount: 8000, meritIdx: 72 }, alumni: 3000, dorms: ['traditional', 'suites'],
+      early: { ed: true, ea: false }, division: 'D3'
     }
   };
+  // Admissions office, recruiting, athletics and outcomes settings every school starts with.
+  function officeDefaults(type) {
+    const cfg = START[type] || START.public;
+    return {
+      early: Object.assign({}, cfg.early),
+      phase: 'regular',
+      earlyReport: null,
+      staff: { readers: 1, used: 0, autoRead: true, rules: { admit: 75, wait: 55, athleteStars: 4, standouts: 'flag', records: 'deny', stopAtTarget: true } },
+      recruit: { marketing: 0, states: [], countries: [], athletics: 0 },
+      athletics: { division: cfg.division, conference: defaultConference(cfg.division).id, transition: 0, titleIX: 0 },
+      outcomes: [],
+      cohorts: {}
+    };
+  }
   const STARTER_MAJORS = ['bio', 'bus', 'cs', 'engl', 'psych', 'hist'];
   const STARTER_SPORTS = ['m-basketball', 'w-basketball', 'm-soccer', 'w-soccer'];
 
@@ -224,13 +241,25 @@
 
   // ---------- applicant pool ----------
   // How the pool splits between your state and everywhere else, and how far your name carries.
+  // Recruiting campaigns in other states and countries pull more applicants from there.
   function residencyMix() {
     const s = state;
+    const rec = s.recruit;
+    const home = s.school.state;
     let base = s.school.type === 'public' ? 0.55 : 0.25;
     base *= clamp(1.25 - s.prestige / 100, 0.35, 1.1);
+    if (rec.states.includes(home)) base *= 1.4;
     const outAppeal = clamp(1.25 - (s.tuitionOut - s.tuitionIn) / 40000 - Math.max(0, s.tuitionOut - 30000) / 100000, 0.3, 1.35);
-    const volume = base + (1 - base) * outAppeal;
-    return { inShare: base / volume, volume, outAppeal };
+    let w0 = 0, w1 = 0;
+    for (const st of D.STATES) {
+      if (st.code === home) continue;
+      w0 += st.cities.length;
+      w1 += st.cities.length * (rec.states.includes(st.code) ? 3 : 1);
+    }
+    const campaign = w1 / w0;
+    const intlRate = clamp((0.07 + s.prestige / 1500) * (1 + rec.countries.length * 0.25), 0, 0.45);
+    const volume = base + (1 - base) * outAppeal * campaign;
+    return { inShare: base / volume, volume, outAppeal, campaign, intlRate, states: rec.states.slice(), countries: rec.countries.slice() };
   }
 
   // Sticker shock for a typical middle-income family, after aid.
@@ -260,8 +289,12 @@
       { label: 'Buzz', mult: buzzMult(s.buzz) },
       { label: 'Alumni network', mult: 1 + Math.log10(1 + s.alumni / 4000) * 0.35 },
       { label: 'Net price', mult: clamp(1.15 - (net - 15000) / 60000, 0.55, 1.3) },
-      { label: 'Out-of-state draw', mult: mix.volume / (s.school.type === 'public' ? 0.92 : 1.1) },
-      { label: 'Housing guarantee', mult: m.housing.freshBeds >= s.targetClass ? 1 : 0.88 + 0.12 * m.housing.freshBeds / Math.max(1, s.targetClass) }
+      { label: 'Out-of-state draw & campaigns', mult: mix.volume / (s.school.type === 'public' ? 0.92 : 1.1) },
+      { label: 'Housing guarantee', mult: m.housing.freshBeds >= s.targetClass ? 1 : 0.88 + 0.12 * m.housing.freshBeds / Math.max(1, s.targetClass) },
+      { label: 'Marketing', mult: 1 + 0.12 * Math.log2(1 + s.recruit.marketing / 200000) },
+      { label: 'Early programs', mult: 1 + (s.early.ea ? 0.06 : 0) + (s.early.ed ? 0.03 : 0) },
+      { label: 'Career outcomes', mult: 0.85 + outcomeScore() / 333 },
+      { label: 'Athletics exposure', mult: D.DIVISIONS[s.athletics.division].appMult * (1 + conferenceOf().tv / 1e8) }
     ];
     const base = 90 + 3.5 * s.prestige;
     const total = f.reduce((x, k) => x * k.mult, base);
@@ -271,7 +304,10 @@
   // The parts of the school an applicant pool is drawn from, frozen when the pool is generated.
   function poolContext() {
     const s = state;
-    return { prestige: s.prestige, majors: s.majors.slice(), sports: s.sports.slice(), alumni: s.alumni, mix: residencyMix() };
+    return {
+      prestige: s.prestige, majors: s.majors.slice(), sports: s.sports.slice(), alumni: s.alumni, mix: residencyMix(),
+      ed: s.early.ed, ea: s.early.ea, athletics: s.recruit.athletics, starTilt: D.DIVISIONS[s.athletics.division].starTilt
+    };
   }
 
   function makeApplicant(opts) {
@@ -287,12 +323,12 @@
     if (r < mix.inShare) {
       const st = stateByCode(s.school.state);
       city = pick(st.cities); region = st.code; stateCode = st.code;
-    } else if (rng() < 0.07 + ctx.prestige / 1500) {
-      [city, region] = pick(D.INTERNATIONAL);
+    } else if (rng() < (mix.intlRate != null ? mix.intlRate : 0.07 + ctx.prestige / 1500)) {
+      [city, region] = weightedPick(D.INTERNATIONAL, x => (mix.countries && mix.countries.includes(x[1]) ? 4 : 1));
       intl = true;
     } else {
       let st;
-      do st = weightedPick(D.STATES, x => x.cities.length); while (st.code === s.school.state);
+      do st = weightedPick(D.STATES, x => x.cities.length * (mix.states && mix.states.includes(x.code) ? 3 : 1)); while (st.code === s.school.state);
       city = pick(st.cities); region = st.code; stateCode = st.code;
     }
 
@@ -349,14 +385,17 @@
     const fits = x => !x.g || x.g === gender;
     let sportPool = (sportIds && sportIds.length ? sportIds.map(sportById).filter(Boolean) : D.SPORTS).filter(fits);
     if (!sportPool.length) sportPool = D.SPORTS.filter(fits);
-    if (rng() < (opts.athleteRate != null ? opts.athleteRate : 0.2)) {
+    // Higher divisions and a bigger recruiting budget draw more, and better, recruits.
+    const recruitSpend = Math.min(1, (ctx.athletics || 0) / 2000000);
+    const tilt = (ctx.starTilt || 0) + recruitSpend * 0.6;
+    if (rng() < (opts.athleteRate != null ? opts.athleteRate : 0.2 + recruitSpend * 0.08)) {
       sport = pick(sportPool).id;
-      stars = weightedPick([1, 2, 3, 4, 5], n => [30, 30, 22, 13, 5][n - 1]);
+      stars = weightedPick([1, 2, 3, 4, 5], n => Math.max(2, [30 - 8 * tilt, 30 - 4 * tilt, 22 + 2 * tilt, 13 + 5 * tilt, 5 + 5 * tilt][n - 1]));
     }
 
     // Family finances. Stronger students skew a little wealthier, as they do in real applicant pools.
-    const tilt = (q - 50) / 100;
-    const bracket = weightedPick(D.INCOME, b => b.w * Math.max(0.2, 1 + tilt * (b.id - 1.5) * 0.6));
+    const wealthTilt = (q - 50) / 100;
+    const bracket = weightedPick(D.INCOME, b => b.w * Math.max(0.2, 1 + wealthTilt * (b.id - 1.5) * 0.6));
     let efc = roundTo(rand(bracket.efc[0], bracket.efc[1]), 500);
     const firstGen = rng() < [0.45, 0.25, 0.08, 0.02][bracket.id];
     const legacy = !firstGen && rng() < Math.min(0.1, (ctx.alumni || 0) / 60000);
@@ -377,6 +416,16 @@
       efc = roundTo(rand(150000, 400000), 1000);
     }
 
+    // Early Decision is binding, so those applicants tend to be families who can pay; Early Action isn't.
+    let round = 'RD';
+    const rr = rng();
+    const edShare = ctx.ed ? 0.06 + ctx.prestige / 1000 : 0;
+    const eaShare = ctx.ea ? 0.18 + ctx.prestige / 800 : 0;
+    if (rr < edShare) {
+      round = 'ED';
+      if (hook !== 'donor') efc = roundTo(Math.max(efc * 1.4, efc + 8000), 500);
+    } else if (rr < edShare + eaShare) round = 'EA';
+
     let greekP = 0.22 + (activities.some(x => ACT_TAG.get(x) === 'social') ? 0.15 : 0) + (income >= 2 ? 0.08 : 0) - (firstGen ? 0.06 : 0) + (legacy ? 0.1 : 0);
 
     const a = {
@@ -390,6 +439,7 @@
       activities,
       income, efc, firstGen, legacy, hook,
       greekInt: rng() < greekP,
+      round,
       scholarship: 0,
       decision: 'pending'
     };
@@ -415,6 +465,9 @@
     s.pool = { gen: POOL_GEN, seed: Math.floor(Math.random() * 2147483647), n: Math.round(out.total * rand(0.92, 1.08)), firstId: s.nextId, ctx };
     s.nextId += s.pool.n;
     s.applicants = buildPool(s.pool);
+    s.phase = s.applicants.some(isEarly) ? 'early' : 'regular';
+    s.earlyReport = null;
+    s.staff.used = 0;
   }
   function buildPool(pool) {
     const prev = rng;
@@ -432,6 +485,9 @@
   // at a low-prestige school; missing majors or teams, cost and a cramped campus hurt.
   function enrollChance(a) {
     const s = state, m = metrics();
+    if (a.committed) return 1;
+    // Before release, an Early Decision admit is a commitment unless the aid falls short.
+    if (a.round === 'ED' && !a.deferred && s.phase === 'early') return edCommitChance(a);
     let p = 0.5 + (s.prestige - a.idx) * 0.01;
     if (!s.majors.includes(a.major)) p *= 0.4;
     else {
@@ -439,7 +495,9 @@
       const cov = deptCoverage(a.major);
       if (cov < 1) p *= 0.75 + 0.25 * cov;
     }
-    if (a.sport) p *= s.sports.includes(a.sport) ? 1.3 : 0.6;
+    if (a.sport) p *= s.sports.includes(a.sport) ? 1.3 * D.DIVISIONS[s.athletics.division].yield : 0.6;
+    if (a.round === 'EA' && !a.deferred) p *= 1.25;
+    p *= 0.95 + outcomeScore() / 1200;
     const pkg = aidPackage(a);
     p *= pkg.gap <= 0 ? 1.15 : clamp(1.1 - pkg.gap / 40000, 0.15, 1.1);
     const gift = pkg.merit + pkg.scholarship;
@@ -456,6 +514,15 @@
   function enrollFactors(a) {
     const s = state, m = metrics();
     const out = [];
+    if (a.committed) return [{ tone: 'good', text: 'Committed through Early Decision' }];
+    if (a.round === 'ED' && !a.deferred && s.phase === 'early') {
+      const pkg = aidPackage(a);
+      return [pkg.gap > 0
+        ? { tone: 'warn', text: 'Early Decision is binding, but the family is $' + pkg.gap.toLocaleString() + ' a year short and may be released' }
+        : { tone: 'good', text: 'Early Decision is binding: if you admit them, they come' }];
+    }
+    if (a.round === 'EA' && !a.deferred) out.push({ tone: 'good', text: 'Applied Early Action, a sign you’re a top choice' });
+    if (a.deferred) out.push({ tone: 'warn', text: 'Deferred from the early round' });
     const gap = s.prestige - a.idx;
     if (gap < -15) out.push({ tone: 'bad', text: 'Strong student who may hold out for a more prestigious school' });
     else if (gap > 10) out.push({ tone: 'good', text: 'Your school is a reach for this student' });
@@ -486,6 +553,269 @@
         : { tone: 'warn', text: 'Wants to go Greek but you have no ' + (a.gender === 'F' ? 'sororities' : 'fraternities') });
     }
     return out;
+  }
+
+  // ---------- early round ----------
+  const isEarly = a => a.round === 'ED' || a.round === 'EA';
+  // Files the office can see right now. Regular applicants arrive once early decisions go out.
+  function visibleApplicants() {
+    const s = state;
+    return s.phase === 'early' ? s.applicants.filter(isEarly) : s.applicants;
+  }
+  // Early files decided in the early round can't be reopened in the regular round.
+  function isLocked(a) {
+    return state.phase === 'regular' && isEarly(a) && !a.deferred;
+  }
+  // The middle option: defer in the early round, waitlist in the regular round.
+  function holdDecision() {
+    return state.phase === 'early' ? 'defer' : 'waitlist';
+  }
+  function setDecision(a, d) {
+    if (!a || isLocked(a)) return false;
+    if (d === 'waitlist' || d === 'defer') d = holdDecision();
+    a.decision = d;
+    return true;
+  }
+  // Early Decision is binding, but a family can walk away if the aid package leaves them short.
+  function edCommitChance(a) {
+    const gap = aidPackage(a).gap;
+    return gap <= 0 ? 0.98 : clamp(1 - gap / 25000, 0.2, 0.95);
+  }
+  function releaseEarly() {
+    const s = state;
+    if (s.phase !== 'early') return null;
+    const r = { edAdmitted: 0, committed: 0, released: 0, eaAdmitted: 0, deferred: 0, autoDeferred: 0, denied: 0 };
+    for (const a of s.applicants) {
+      if (!isEarly(a)) continue;
+      if (a.decision === 'pending') { a.decision = 'defer'; r.autoDeferred++; }
+      if (a.decision === 'defer') { a.deferred = true; a.decision = 'pending'; r.deferred++; }
+      else if (a.decision === 'deny') r.denied++;
+      else if (a.decision === 'admit') {
+        if (a.round === 'ED') {
+          r.edAdmitted++;
+          if (rng() < edCommitChance(a)) { a.committed = true; r.committed++; } else r.released++;
+        } else r.eaAdmitted++;
+      }
+    }
+    s.phase = 'regular';
+    s.earlyReport = r;
+    log('Early decisions went out: ' + r.committed + ' students committed through Early Decision, ' + r.eaAdmitted + ' admitted Early Action, ' + r.deferred + ' deferred.');
+    save();
+    return r;
+  }
+  function expectedFreshmen() {
+    return state.applicants.reduce((x, a) => x + (a.decision === 'admit' ? enrollChance(a) : 0), 0);
+  }
+  function setEarlyPrograms(ed, ea) {
+    state.early = { ed: !!ed, ea: !!ea };
+    save();
+  }
+
+  // ---------- admissions staff ----------
+  function staffCapacity() { return state.staff.readers * D.STAFF.filesPerReader; }
+  function staffRemaining() { return Math.max(0, staffCapacity() - state.staff.used); }
+  function setReaders(n) {
+    state.staff.readers = clamp(Math.round(n), 0, 2000);
+    save();
+  }
+  function setStaffRule(key, value) {
+    state.staff.rules[key] = value;
+    save();
+  }
+  // Readers work through pending files in the order they arrived, applying your rules.
+  // Files they flag stay pending for you to read yourself.
+  function staffRead(list) {
+    const s = state, r = s.staff.rules;
+    const out = { read: 0, admit: 0, hold: 0, deny: 0, flagged: 0 };
+    let cap = staffRemaining();
+    const files = (list || visibleApplicants()).filter(a => a.decision === 'pending' && !a.flagged && !isLocked(a)).sort((x, y) => x.id - y.id);
+    let expected = expectedFreshmen();
+    const hold = holdDecision();
+    for (const a of files) {
+      if (cap <= 0) break;
+      cap--;
+      s.staff.used++;
+      out.read++;
+      const good = a.hook && a.hook !== 'trouble';
+      if ((a.hook === 'trouble' && r.records === 'flag') || (good && r.standouts === 'flag')) {
+        a.flagged = true;
+        out.flagged++;
+        continue;
+      }
+      let d;
+      if (a.hook === 'trouble' && r.records === 'deny') d = 'deny';
+      else if (good && r.standouts === 'admit') d = 'admit';
+      else if (a.sport && s.sports.includes(a.sport) && a.stars >= r.athleteStars) d = 'admit';
+      else if (a.idx >= r.admit) d = 'admit';
+      else if (a.idx >= r.wait) d = hold;
+      else d = 'deny';
+      if (d === 'admit' && r.stopAtTarget && expected >= s.targetClass * 1.05) d = hold;
+      a.decision = d;
+      if (d === 'admit') { expected += enrollChance(a); out.admit++; }
+      else if (d === 'deny') out.deny++;
+      else out.hold++;
+    }
+    save();
+    return out;
+  }
+
+  // ---------- recruiting ----------
+  function setRecruit(key, value) {
+    state.recruit[key] = value;
+    save();
+  }
+  function toggleCampaign(kind, id) {
+    const list = state.recruit[kind];
+    const i = list.indexOf(id);
+    if (i >= 0) list.splice(i, 1); else list.push(id);
+    save();
+  }
+
+  // ---------- graduation & careers ----------
+  function careerFor(st) {
+    const s = state;
+    const out = D.OUTCOMES[st.major] || D.OUTCOMES.undeclared;
+    const placed = rng() < clamp(out[1] * (0.85 + (st.idx || 50) / 400 + s.prestige / 500), 0.3, 0.99);
+    const salary = placed ? roundTo(out[0] * (0.75 + (st.idx || 50) / 250 + s.prestige / 400) * Math.exp(gauss() * 0.15), 500) : 0;
+    return { placed, salary };
+  }
+  function median(list) {
+    if (!list.length) return 0;
+    const v = list.slice().sort((a, b) => a - b);
+    return v[Math.floor(v.length / 2)];
+  }
+  // 0–100 from recent graduation rates, job placement and pay. New schools get a neutral 60.
+  function outcomeScore() {
+    const o = state.outcomes;
+    if (!o || !o.length) return 60;
+    const recent = o.slice(-3);
+    const avg = k => recent.reduce((x, r) => x + r[k], 0) / recent.length;
+    return clamp(avg('gradRate') * 50 + avg('placed') * 30 + clamp((avg('salary') - 35000) / 40000, 0, 1) * 20, 0, 100);
+  }
+  // How a major's graduates have done at your school over the last few years.
+  function majorOutcome(id) {
+    let n = 0, placed = 0, pay = 0;
+    for (const r of state.outcomes.slice(-3)) {
+      const b = r.byMajor[id];
+      if (b) { n += b[0]; placed += b[1]; pay += b[2]; }
+    }
+    return n ? { n, placed: placed / n, salary: placed ? Math.round(pay / placed) : 0 } : null;
+  }
+
+  // ---------- athletics: divisions, conferences, Title IX ----------
+  function conferenceOf() {
+    return D.CONFERENCES.find(c => c.id === state.athletics.conference) || D.CONFERENCES[0];
+  }
+  function defaultConference(div) {
+    return D.CONFERENCES.filter(c => c.div === div).sort((a, b) => a.minPrestige - b.minPrestige)[0];
+  }
+  // How far the share of women among athletes is from the share among students. Small rosters swing
+  // by chance, so the allowance starts wide and narrows toward 10 points as the athletic program grows.
+  function titleIX() {
+    const m = metrics();
+    if (!m.athletes || !m.n) return { gap: 0, allowed: 0.1, over: false, women: 0, students: 0 };
+    const women = m.athletesF / m.athletes, students = m.female / m.n;
+    const gap = Math.abs(women - students);
+    const allowed = 0.1 + 0.6 / Math.sqrt(m.athletes);
+    return { gap, allowed, over: m.athletes >= 20 && gap > allowed, women, students };
+  }
+  function titleIXGap() { const t = titleIX(); return t.over ? t.gap - t.allowed + 0.1 : 0; }
+  function divisionCheck(target) {
+    const s = state;
+    const d = D.DIVISIONS[target];
+    const cur = D.DIVISIONS[s.athletics.division];
+    const reasons = [];
+    if (target === s.athletics.division) reasons.push('You’re already in ' + d.label + '.');
+    if (d.rank < cur.rank) {
+      const progs = s.sports.map(sportById).filter(Boolean);
+      const women = progs.filter(x => x.g === 'F').length;
+      if (progs.length < d.minPrograms) reasons.push('Needs ' + d.minPrograms + ' varsity programs (you have ' + progs.length + ').');
+      if (women < d.minWomen) reasons.push('Needs ' + d.minWomen + ' women’s programs (you have ' + women + ').');
+      if (s.prestige < d.minPrestige) reasons.push('Needs prestige ' + d.minPrestige + '.');
+      if (titleIX().over) reasons.push('Your athletes’ gender mix is too far from your student body’s (Title IX). Add teams for the underrepresented gender.');
+      if (s.athletics.transition > 0) reasons.push('Finish your current transition first.');
+      if (s.budget < d.fee) reasons.push('Needs ' + d.fee.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }) + ' for the membership fee.');
+    }
+    return { ok: !reasons.length, reasons, up: d.rank < cur.rank };
+  }
+  function changeDivision(target) {
+    const s = state;
+    const chk = divisionCheck(target);
+    if (!chk.ok) return chk;
+    const d = D.DIVISIONS[target];
+    if (chk.up) { s.budget -= d.fee; s.athletics.transition = d.transition; }
+    else s.athletics.transition = 0;
+    s.athletics.division = target;
+    s.athletics.conference = defaultConference(target).id;
+    log((chk.up ? 'Moved up to ' : 'Moved down to ') + d.label + ' and joined the ' + conferenceOf().name + '.');
+    save();
+    return chk;
+  }
+  function conferenceCheck(id) {
+    const s = state;
+    const c = D.CONFERENCES.find(x => x.id === id);
+    const reasons = [];
+    if (!c) return { ok: false, reasons: ['Unknown conference.'] };
+    if (c.id === s.athletics.conference) reasons.push('You’re already a member.');
+    if (c.div !== s.athletics.division) reasons.push('It’s a ' + D.DIVISIONS[c.div].label + ' conference.');
+    if (s.prestige < c.minPrestige) reasons.push('Invites schools with prestige ' + c.minPrestige + '+.');
+    if (c.needsFootball && !s.sports.includes('m-football')) reasons.push('Requires a football program.');
+    if (s.athletics.transition > 0 && c.tv > defaultConference(c.div).tv) reasons.push('Finish your division transition first.');
+    if (s.budget < CONFERENCE_EXIT_FEE) reasons.push('Needs $500K to cover the exit fee.');
+    return { ok: !reasons.length, reasons };
+  }
+  function joinConference(id) {
+    const s = state;
+    const chk = conferenceCheck(id);
+    if (!chk.ok) return chk;
+    s.budget -= CONFERENCE_EXIT_FEE;
+    s.athletics.conference = id;
+    log('Joined the ' + conferenceOf().name + '.');
+    save();
+    return chk;
+  }
+
+  // Conference titles, rivalry games, postseason runs and Title IX complaints.
+  function athleticsEvents(results) {
+    const s = state;
+    const ev = [];
+    const add = (tone, text, fx) => ev.push(Object.assign({ tone, text, prestige: 0, buzz: 0, money: 0 }, fx));
+    const conf = conferenceOf();
+    const div = D.DIVISIONS[s.athletics.division];
+    const big = s.athletics.division === 'D1' ? 1.5 : 1;
+    for (const r of results) {
+      const pct = r.w / Math.max(1, r.w + r.l);
+      if (s.athletics.transition > 0) continue;
+      if (pct >= 0.7 && rng() < (pct - 0.55) * 1.6) {
+        add('good', r.name + ' won the ' + conf.name + ' championship.', { prestige: 0.15 * big, buzz: 1 * big });
+        if (pct >= 0.8 && rng() < 0.35) {
+          const flagship = r.id === 'm-football' || r.id === 'm-basketball' || r.id === 'w-basketball';
+          const money = flagship ? roundTo(rand(0.3, 1.2) * div.revenue * 1e6, 50000) : 0;
+          add('good', r.name + ' made a deep run in the national ' + (r.id === 'm-football' ? 'playoff' : 'tournament') + '.', { prestige: 0.2 * big, buzz: 3 * big, money });
+        }
+      }
+    }
+    const marquee = ['m-football', 'm-basketball', 'w-basketball'].find(id => s.sports.includes(id));
+    const mr = results.find(r => r.id === marquee);
+    if (mr) {
+      const rival = conf.rivals[s.year % conf.rivals.length];
+      if (rng() < mr.w / Math.max(1, mr.w + mr.l)) add('good', mr.name + ' beat ' + rival + ' in the rivalry game. Students celebrated all night.', { buzz: 1.2 });
+      else add('warn', mr.name + ' lost the rivalry game to ' + rival + '.', { buzz: -0.3 });
+    }
+    // Title IX: athletic opportunities should track the student body.
+    const gap = titleIXGap();
+    if (titleIX().over) {
+      s.athletics.titleIX++;
+      if (rng() < Math.min(0.85, (gap - 0.1) * 3 + 0.1 * (s.athletics.titleIX - 1))) {
+        if (s.athletics.titleIX >= 3) add('bad', 'A federal Title IX investigation found ' + s.school.name + ' gives women unequal athletic opportunities.', { prestige: -2, buzz: -3, money: -2000000 });
+        else add('bad', 'A Title IX complaint was filed over unequal athletic opportunities for women.', { prestige: -0.6, buzz: -1, money: -300000 });
+      }
+    } else s.athletics.titleIX = 0;
+    if (s.athletics.transition > 0) {
+      s.athletics.transition--;
+      if (!s.athletics.transition) add('good', s.school.name + ' completed its move to ' + div.label + '. Teams can now win conference titles.', { buzz: 2 });
+    }
+    return ev;
   }
 
   // ---------- classes ----------
@@ -719,7 +1049,15 @@
       const pct = rec ? rec.w / Math.max(1, rec.w + rec.l) : 0.5;
       return sum + sp.revenue * (0.5 + pct) * (0.6 + s.prestige / 100);
     }, 0);
-    revenue.push({ label: 'Athletics tickets & media', amount: Math.round(sportsRev) });
+    const div = D.DIVISIONS[s.athletics.division];
+    revenue.push({ label: 'Athletics tickets & media', amount: Math.round(sportsRev * div.revenue) });
+    const tv = conferenceOf().tv * (s.athletics.transition > 0 ? 0.5 : 1);
+    if (tv) revenue.push({ label: 'Conference TV deal', amount: tv });
+    // Scholarships cover roster spots, not every recruit on campus.
+    const onRoster = {};
+    for (const st of students) if (st.sport) onRoster[st.sport] = (onRoster[st.sport] || 0) + 1;
+    const scholarshipAthletes = s.sports.reduce((x, id) => x + Math.min(onRoster[id] || 0, sportById(id).roster), 0);
+    const rec = s.recruit;
 
     const hallUpkeep = s.dorms.reduce((x, d) => x + D.DORMS[d.type].beds * D.DORMS[d.type].upkeep, 0);
     const greekCost = s.greek.length * D.GREEK.upkeep + s.greek.filter(c => c.house).length * D.GREEK.houseBeds * D.GREEK.houseUpkeep;
@@ -729,8 +1067,11 @@
       { label: 'Academic departments', amount: s.majors.reduce((sum, id) => sum + majorById(id).cost, 0) },
       { label: 'Faculty for classes', amount: s.classes.reduce((sum, c) => sum + D.CLASS_SIZES[c.size].cost, 0) },
       { label: 'Residence halls & dining', amount: hallUpkeep + m.housing.residents * DINING_PER_RESIDENT },
-      { label: 'Athletic programs', amount: s.sports.reduce((sum, id) => sum + sportById(id).cost, 0) }
+      { label: 'Athletic programs', amount: s.sports.reduce((sum, id) => sum + sportById(id).cost, 0) },
+      { label: 'Admissions staff', amount: s.staff.readers * D.STAFF.readerCost },
+      { label: 'Recruiting & marketing', amount: rec.marketing + rec.athletics + rec.states.length * D.RECRUITING.stateCost + rec.countries.length * D.RECRUITING.countryCost }
     ];
+    if (div.schol) expenses.push({ label: 'Athletic scholarships', amount: scholarshipAthletes * div.schol });
     if (s.greek.length) expenses.push({ label: 'Greek life office & houses', amount: greekCost });
     const totalRev = revenue.reduce((x, l) => x + l.amount, 0);
     const totalExp = expenses.reduce((x, l) => x + l.amount, 0);
@@ -748,7 +1089,8 @@
       const elite = roster.filter(st => st.hook === 'olympian').length;
       const talent = roster.length ? Math.min(1.2, roster.reduce((x, st) => x + st.stars, 0) / roster.length / 5 + elite * 0.04) : 0.2;
       const depth = Math.min(1, roster.length / Math.max(3, sp.roster * 0.4));
-      const p = clamp(0.12 + 0.55 * talent * (0.4 + 0.6 * depth) + 0.2 * s.prestige / 100 + rand(-0.08, 0.08), 0.04, 0.96);
+      // Opponents get better as you move up a division.
+      const p = clamp(0.12 + 0.55 * talent * (0.4 + 0.6 * depth) + 0.2 * s.prestige / 100 - D.DIVISIONS[s.athletics.division].starTilt * 0.06 + rand(-0.08, 0.08), 0.04, 0.96);
       let w = 0;
       for (let g = 0; g < sp.games; g++) if (rng() < p) w++;
       const rec = { w, l: sp.games - w, recruits: roster.length };
@@ -759,8 +1101,8 @@
   }
 
   // What alumni give back each year, for life.
-  function givingFor(st) {
-    let g = 40 + (st.idx || 50) * 2;
+  function givingFor(st, salary) {
+    let g = 40 + (salary ? salary * 0.003 : (st.idx || 50));
     if (st.income === 3) g += 600;
     if (st.greek) g *= 1.6;
     if (st.hook === 'startup') g += 5000;
@@ -873,8 +1215,12 @@
 
   function endSeason() {
     const s = state;
+    // Early decisions go out first if you haven't sent them, then staff read whatever is left.
+    const early = s.phase === 'early' ? releaseEarly() : s.earlyReport;
+    const staffOut = s.staff.autoRead && staffRemaining() ? staffRead() : null;
     const m0 = metrics();
     const rep = {
+      early, staffRead: staffOut,
       year: s.year,
       applied: s.applicants.length,
       admitted: 0, waitlisted: 0, denied: 0, untouched: 0,
@@ -906,11 +1252,14 @@
     }
     // Aid is locked in at the package they accepted.
     for (const a of incoming) a.aid = aidPackage(a).total;
+    rep.committed = incoming.filter(a => a.committed).length;
+    s.cohorts[s.year + 4] = incoming.length;
 
     // 3. Current students move up a year; some leave, seniors graduate.
     const coverage = seatCoverage();
     const lifeBonus = (m0.life.score - 50) / 2000;
     const stay = [];
+    const grads = [];
     let newAlumni = 0;
     for (const st of s.students) {
       let dropRate = 0.03 + (coverage < 1 ? (1 - coverage) * 0.15 : 0);
@@ -928,7 +1277,9 @@
       if (st.yearInSchool > 4) {
         rep.graduated++;
         newAlumni++;
-        s.alumniGiving += givingFor(st);
+        const career = careerFor(st);
+        grads.push({ major: st.major, placed: career.placed, salary: career.salary });
+        s.alumniGiving += givingFor(st, career.salary);
         if (st.hook && st.hook !== 'trouble') {
           s.notableAlumni.unshift({ name: st.name, classOf: st.classOf, hook: st.hook, major: st.major });
           if (s.notableAlumni.length > 200) s.notableAlumni.length = 200;
@@ -938,6 +1289,27 @@
       stay.push(st);
     }
     s.alumni += newAlumni;
+
+    // Where the graduating class landed.
+    const byMajor = {};
+    for (const g of grads) {
+      const b = byMajor[g.major] || (byMajor[g.major] = [0, 0, 0]);
+      b[0]++;
+      if (g.placed) { b[1]++; b[2] += g.salary; }
+    }
+    const cohort = s.cohorts[s.year] || Math.round(grads.length / 0.85);
+    const pays = grads.filter(g => g.placed).map(g => g.salary);
+    rep.outcome = {
+      year: s.year, graduated: grads.length, cohort,
+      gradRate: cohort ? Math.min(1, grads.length / cohort) : 0,
+      placed: grads.length ? pays.length / grads.length : 0,
+      salary: median(pays), byMajor
+    };
+    if (grads.length) {
+      s.outcomes.push(rep.outcome);
+      if (s.outcomes.length > 40) s.outcomes.shift();
+    }
+    delete s.cohorts[s.year];
 
     // 4. Freshmen arrive.
     const freshmen = incoming.map(a => {
@@ -978,8 +1350,8 @@
     invalidate();
     const m = metrics();
 
-    // 7. Campus news driven by the students you admitted.
-    rep.events = rep.events.concat(campusEvents(m));
+    // 7. Campus news driven by the students you admitted, plus the athletic season.
+    rep.events = rep.events.concat(campusEvents(m), athleticsEvents(rep.sports));
     // A big school makes more news, but each headline matters less: yearly effects level off.
     const evPrestige = clamp(rep.events.reduce((x, e) => x + e.prestige, 0), -2, 2);
     const evBuzz = 15 * Math.tanh(rep.events.reduce((x, e) => x + e.buzz, 0) / 15);
@@ -1004,12 +1376,13 @@
     const winPct = games ? rep.sports.reduce((x, r) => x + r.w, 0) / games : 0.4;
     // A tiny class isn't selective, it's empty: scale the academic credit by how full the class is.
     const fill = Math.min(1, rep.enrolled / Math.max(1, s.targetClass));
-    const target = 0.32 * incomingIdx * (0.5 + 0.5 * fill)
-      + 0.12 * Math.min(100, s.majors.length * 4)
-      + 0.12 * Math.min(100, coverage * 100)
-      + 0.12 * classQuality() * 100
-      + 0.12 * winPct * 100
-      + 0.2 * m.life.score;
+    const target = 0.3 * incomingIdx * (0.5 + 0.5 * fill)
+      + 0.11 * Math.min(100, s.majors.length * 4)
+      + 0.11 * Math.min(100, coverage * 100)
+      + 0.11 * classQuality() * 100
+      + 0.11 * winPct * 100
+      + 0.16 * m.life.score
+      + 0.1 * outcomeScore();
     s.prestige = Math.round(clamp(s.prestige + (target - s.prestige) * 0.25 + evPrestige, 1, 99) * 10) / 10;
     rep.prestigeAfter = s.prestige;
     rep.eventPrestige = evPrestige;
@@ -1028,6 +1401,7 @@
       year: s.year, applied: rep.applied, admitted: rep.admitted, enrolled: rep.enrolled,
       acceptRate: rep.acceptRate, yieldRate: rep.yieldRate, avgGpa: rep.incomingAvgGpa,
       femalePct: rep.femalePct, inStatePct: rep.inStatePct, life: m.life.score,
+      gradRate: grads.length ? rep.outcome.gradRate : null, salary: grads.length ? rep.outcome.salary : null,
       students: s.students.length, prestige: s.prestige, budget: s.budget, net: fin.net
     });
     log('Class of ' + (s.year + 4) + ' enrolled: ' + rep.enrolled + ' freshmen from ' + rep.applied.toLocaleString() + ' applicants.', s.year);
@@ -1053,7 +1427,7 @@
   function newGame(settings) {
     const cfg = START[settings.type];
     state = {
-      version: 3,
+      version: 4,
       school: {
         name: settings.name, mascot: settings.mascot,
         primary: settings.primary, secondary: settings.secondary,
@@ -1086,6 +1460,8 @@
       nextId: 1,
       lastReport: null
     };
+    Object.assign(state, officeDefaults(settings.type));
+    state.version = 4;
     invalidate();
     for (const m of STARTER_MAJORS) {
       addClass(m, 0, 'standard', true);
@@ -1108,6 +1484,8 @@
         a.aid = aidPackage(a).total;
         state.students.push(toStudent(a, y, START_YEAR + 4 - y));
       }
+      // Each class started a little bigger than it is now; some students have left.
+      state.cohorts[START_YEAR + 4 - y] = Math.round(n / (1 - 0.035 * (y - 1)));
     }
     invalidate();
     rush(state.students, 0.8);
@@ -1124,13 +1502,15 @@
   const STUDENT_KEYS = ['id', 'name', 'gender', 'region', 'stateCode', 'intl', 'gpa', 'major', 'sport', 'stars',
     'activities', 'idx', 'income', 'firstGen', 'legacy', 'hook', 'greekInt', 'aid', 'yearInSchool', 'classOf', 'greek'];
   const APPLICANT_KEYS = ['id', 'name', 'gender', 'city', 'region', 'stateCode', 'intl', 'gpa', 'wgpa', 'aps', 'sat', 'act',
-    'major', 'sport', 'stars', 'activities', 'idx', 'income', 'efc', 'firstGen', 'legacy', 'hook', 'greekInt', 'decision', 'scholarship', 'honors'];
+    'major', 'sport', 'stars', 'activities', 'idx', 'income', 'efc', 'firstGen', 'legacy', 'hook', 'greekInt', 'decision', 'scholarship', 'honors', 'round', 'deferred', 'committed', 'flagged'];
   const NULLABLE = new Set(['sat', 'act', 'sport', 'hook', 'stateCode', 'greek']);
-  const BOOL_KEYS = new Set(['intl', 'firstGen', 'legacy', 'greekInt']);
+  const BOOL_KEYS = new Set(['intl', 'firstGen', 'legacy', 'greekInt', 'deferred', 'committed', 'flagged']);
   const AP_INDEX = new Map(D.AP_COURSES.map((n, i) => [n, i]));
   const ACT_INDEX = new Map(ACT_NAMES.map((n, i) => [n, i]));
-  const DECISION_CODE = { pending: 'p', admit: 'a', waitlist: 'w', deny: 'd' };
-  const DECISION_FROM = { p: 'pending', a: 'admit', w: 'waitlist', d: 'deny' };
+  const DECISION_CODE = { pending: 'p', admit: 'a', waitlist: 'w', deny: 'd', defer: 'f' };
+  const DECISION_FROM = { p: 'pending', a: 'admit', w: 'waitlist', d: 'deny', f: 'defer' };
+  // Early-round state per file, as a digit: 1 deferred, 2 committed, 4 flagged by staff.
+  const flagBits = a => (a.deferred ? 1 : 0) | (a.committed ? 2 : 0) | (a.flagged ? 4 : 0);
 
   function pack(p, keys) {
     const out = keys.map(k => {
@@ -1175,6 +1555,7 @@
       if (state.pool && state.applicants.length === state.pool.n) {
         out.applicants = null;
         out.decisions = state.applicants.map(a => DECISION_CODE[a.decision] || 'p').join('');
+        out.flags = state.applicants.map(flagBits).join('');
         out.scholarships = state.applicants.filter(a => a.scholarship).map(a => [a.id, a.scholarship]);
       } else {
         out.pool = null;
@@ -1205,15 +1586,21 @@
       st.applicants = buildPool(st.pool);
       const codes = st.decisions || '';
       const schol = new Map(st.scholarships || []);
+      const flags = st.flags || '';
       st.applicants.forEach((a, i) => {
         a.decision = DECISION_FROM[codes[i]] || 'pending';
         a.scholarship = schol.get(a.id) || 0;
+        const f = +(flags[i] || 0);
+        if (f & 1) a.deferred = true;
+        if (f & 2) a.committed = true;
+        if (f & 4) a.flagged = true;
       });
     } else {
       st.applicants = st.applicants.map(x => unpack(x, APPLICANT_KEYS));
     }
     delete st.decisions;
     delete st.scholarships;
+    delete st.flags;
     return st;
   }
   function load() {
@@ -1250,11 +1637,26 @@
 
   // Bring a save from an earlier version of the game up to date, one version at a time.
   function migrate(st) {
-    if (st.version >= 3) return st;
+    if (st.version >= 4) return st;
     state = st;
     if (!(st.version >= 2)) migrateTo2(st);
-    migrateTo3(st);
+    if (st.version < 3) migrateTo3(st);
+    migrateTo4(st);
     return st;
+  }
+
+  // Version 4 added early rounds, the admissions staff, recruiting, athletics divisions and career outcomes.
+  function migrateTo4(st) {
+    Object.assign(st, officeDefaults(st.school.type));
+    for (const p of st.students) st.cohorts[p.classOf] = (st.cohorts[p.classOf] || 0) + 1;
+    for (const k in st.cohorts) st.cohorts[k] = Math.round(st.cohorts[k] / 0.9);
+    for (const h of st.history) { if (h.gradRate === undefined) h.gradRate = null; }
+    st.version = 4;
+    // The pool came from an older generator; draw a fresh one once loading finishes.
+    st.applicants = [];
+    st.pool = null;
+    st.stalePool = true;
+    invalidate();
   }
 
   // Version 3 split shared teams into separate men's and women's programs.
@@ -1339,6 +1741,9 @@
     addMajor, dropMajor, addSport, cutSport, rosterFor,
     totalBeds, buildDorm, closeDorm,
     greekChapters, chapterMembers, charterChapter, closeChapter, buildChapterHouse, setGreekPolicy,
-    finances, endSeason, randomSchoolName, pick
+    finances, endSeason, randomSchoolName, pick,
+    isEarly, visibleApplicants, isLocked, holdDecision, setDecision, releaseEarly, edCommitChance, expectedFreshmen, setEarlyPrograms,
+    staffCapacity, staffRemaining, setReaders, setStaffRule, staffRead, setRecruit, toggleCampaign,
+    outcomeScore, majorOutcome, conferenceOf, titleIX, titleIXGap, divisionCheck, changeDivision, conferenceCheck, joinConference
   };
 })();

@@ -390,6 +390,54 @@
     relaxed: { label: 'Hands-off', interest: 1.3, risk: 2.2, life: 1.2, note: 'Big parties and big rush classes. Incidents are far more likely.' }
   };
 
+  // Career outcomes by major: [median starting salary, share employed or in grad school within six months].
+  const OUTCOMES = {
+    bio: [42000, 0.86], chem: [52000, 0.88], phys: [60000, 0.89], math: [62000, 0.9], stat: [68000, 0.92],
+    envs: [45000, 0.84], neuro: [45000, 0.88], bchm: [50000, 0.89], mbio: [40000, 0.8], geol: [55000, 0.86], astr: [58000, 0.85],
+    cs: [80000, 0.9], data: [78000, 0.91], engr: [70000, 0.92], mech: [72000, 0.93], elec: [75000, 0.93], civil: [66000, 0.94],
+    bme: [68000, 0.88], cheme: [77000, 0.93], aero: [74000, 0.91], cyber: [75000, 0.93], infosys: [66000, 0.91],
+    nurs: [72000, 0.96], kin: [40000, 0.85], pubh: [45000, 0.86], pharm: [60000, 0.9], nutr: [46000, 0.86], hsci: [45000, 0.87],
+    bus: [58000, 0.89], fin: [66000, 0.91], acct: [60000, 0.94], mktg: [52000, 0.88], entr: [50000, 0.82], hosp: [44000, 0.9],
+    scm: [62000, 0.93], sptm: [42000, 0.84],
+    econ: [63000, 0.89], psych: [40000, 0.83], poli: [46000, 0.85], crim: [42000, 0.86], soc: [40000, 0.82], anth: [40000, 0.8],
+    intl: [48000, 0.84], geog: [46000, 0.84], ling: [44000, 0.82], cogs: [55000, 0.86], gws: [38000, 0.8],
+    hist: [42000, 0.82], engl: [42000, 0.81], lang: [42000, 0.83], phil: [46000, 0.82], rel: [38000, 0.8], clas: [42000, 0.82],
+    afam: [40000, 0.81], cwri: [38000, 0.76],
+    art: [36000, 0.74], mus: [36000, 0.76], film: [40000, 0.75], thea: [35000, 0.72], danc: [32000, 0.72], gdes: [47000, 0.84],
+    fash: [42000, 0.78], game: [60000, 0.8], anim: [50000, 0.78], photo: [34000, 0.72],
+    edu: [44000, 0.93], comm: [46000, 0.84], jour: [42000, 0.8], arch: [55000, 0.88], agri: [50000, 0.92], ansc: [42000, 0.86],
+    socw: [40000, 0.9], legal: [46000, 0.85], fors: [48000, 0.84], avia: [65000, 0.9], cmgt: [68000, 0.95], plan: [52000, 0.87],
+    undeclared: [38000, 0.74]
+  };
+
+  // NCAA-style divisions. schol = athletic scholarship per recruit per year. revenue scales ticket and media money.
+  // starTilt shifts recruits toward higher star ratings. appMult is the exposure the division brings to admissions.
+  const DIVISIONS = {
+    D3: { label: 'Division III', rank: 3, schol: 0, revenue: 0.6, starTilt: 0, yield: 1, appMult: 1, minPrograms: 0, minWomen: 0, minPrestige: 0, fee: 0, transition: 0,
+      note: 'No athletic scholarships. Students play for the love of it.' },
+    D2: { label: 'Division II', rank: 2, schol: 7000, revenue: 1, starTilt: 0.5, yield: 1.1, appMult: 1.03, minPrograms: 10, minWomen: 5, minPrestige: 0, fee: 1500000, transition: 1,
+      note: 'Partial scholarships and regional rivalries.' },
+    D1: { label: 'Division I', rank: 1, schol: 18000, revenue: 1.8, starTilt: 1.2, yield: 1.25, appMult: 1.08, minPrograms: 14, minWomen: 7, minPrestige: 40, fee: 8000000, transition: 2,
+      note: 'Full scholarships, national TV and the biggest stage in college sports.' }
+  };
+
+  // Fictional conferences. tv = yearly media payout. minPrestige and needsFootball gate invitations.
+  const CONFERENCES = [
+    { id: 'heartland', name: 'Heartland Athletic Conference', div: 'D3', tv: 0, minPrestige: 0, needsFootball: false, rivals: ['Prairie View College', 'Millbrook College', 'St. Anselm University', 'Oak Hollow College'] },
+    { id: 'lal', name: 'Liberal Arts Athletic League', div: 'D3', tv: 100000, minPrestige: 50, needsFootball: false, rivals: ['Whitmore College', 'Ashbury College', 'Kenwood College', 'Halsey College'] },
+    { id: 'greatplains', name: 'Great Plains Conference', div: 'D2', tv: 300000, minPrestige: 0, needsFootball: false, rivals: ['Western Plains University', 'Cobalt State', 'Red River University', 'Northfield State'] },
+    { id: 'coastal', name: 'Coastal Valley Conference', div: 'D2', tv: 600000, minPrestige: 45, needsFootball: false, rivals: ['Bayshore University', 'Tidewater State', 'Seacliff University', 'Palmetto Bay College'] },
+    { id: 'frontier', name: 'Frontier Conference', div: 'D1', tv: 2000000, minPrestige: 40, needsFootball: false, rivals: ['High Desert University', 'Canyon State', 'Silver Basin University', 'Ridgeline State'] },
+    { id: 'atlantic', name: 'Atlantic Metro Conference', div: 'D1', tv: 5000000, minPrestige: 55, needsFootball: false, rivals: ['Harborview University', 'Metro Tech', 'Gotham State', 'Liberty Point University'] },
+    { id: 'mtnpac', name: 'Mountain Pacific Conference', div: 'D1', tv: 12000000, minPrestige: 65, needsFootball: true, rivals: ['Cascade State', 'Pacific Crest University', 'Summit State', 'Redwood University'] },
+    { id: 'premier', name: 'Premier Ten Conference', div: 'D1', tv: 30000000, minPrestige: 75, needsFootball: true, rivals: ['Great Lakes University', 'Ironwood State', 'Capital State University', 'Northern Plains University'] },
+    { id: 'southern', name: 'Southern Power Conference', div: 'D1', tv: 38000000, minPrestige: 80, needsFootball: true, rivals: ['Magnolia State', 'Bayou University', 'Delta Tech', 'Piedmont State University'] }
+  ];
+
+  // Admissions office: readers you hire and what recruiting costs.
+  const STAFF = { readerCost: 65000, filesPerReader: 600 };
+  const RECRUITING = { stateCost: 40000, countryCost: 60000 };
+
   const MASCOTS = ['Owls', 'Hawks', 'Bears', 'Wolves', 'Stags', 'Comets', 'Mariners', 'Foxes', 'Herons', 'Rams', 'Pioneers', 'Lynx', 'Bison', 'Ospreys', 'Badgers'];
   const NAME_PARTS = {
     first: ['North', 'West', 'East', 'South', 'Lake', 'Mount', 'Cedar', 'Pine', 'River', 'Harbor', 'Stone', 'Maple', 'Oak', 'Silver', 'Fair'],
@@ -411,6 +459,6 @@
   window.CB_DATA = {
     STATES, INTERNATIONAL, INTL_NAMES, FEMALE_NAMES, MALE_NAMES, NEUTRAL_NAMES, FIRST_NAMES, LAST_NAMES, AP_COURSES, SENIOR_APS, AP_EXCLUSIVE,
     AREAS, MAJORS, GEN_ED, SPORTS, CLASS_SIZES, LIFE_TAGS, ACTIVITIES, HOOKS, INCOME, DORMS, HALL_NAMES,
-    FRATERNITIES, SORORITIES, GREEK, GREEK_POLICIES, MASCOTS, NAME_PARTS, COLOR_PRESETS
+    FRATERNITIES, SORORITIES, GREEK, GREEK_POLICIES, OUTCOMES, DIVISIONS, CONFERENCES, STAFF, RECRUITING, MASCOTS, NAME_PARTS, COLOR_PRESETS
   };
 })();

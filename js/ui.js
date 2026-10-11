@@ -84,8 +84,11 @@
 
   function yieldTone(p) { return p >= 0.55 ? 'good' : p >= 0.3 ? 'warn' : 'bad'; }
   function yieldWord(p) { return p >= 0.55 ? 'Likely' : p >= 0.3 ? 'Maybe' : 'Unlikely'; }
-  const DECISION_LABEL = { pending: 'Pending', admit: 'Admitted', waitlist: 'Waitlisted', deny: 'Denied' };
-  const STAMP_LABEL = { admit: 'Admit', waitlist: 'Waitlist', deny: 'Deny' };
+  const DECISION_LABEL = { pending: 'Pending', admit: 'Admitted', waitlist: 'Waitlisted', deny: 'Denied', defer: 'Deferred' };
+  const STAMP_LABEL = { admit: 'Admit', waitlist: 'Waitlist', deny: 'Deny', defer: 'Defer' };
+  const ROUND_LABEL = { ED: 'Early Decision', EA: 'Early Action', RD: 'Regular Decision' };
+  const isEarlyPhase = () => G.state.phase === 'early';
+  const holdWord = () => (isEarlyPhase() ? 'Defer' : 'Waitlist');
 
   function pennant(name, mascot, cls) {
     return '<div class="pennant ' + (cls || '') + '" aria-hidden="true"><span class="pennant-name">' + esc(name) +
@@ -102,6 +105,17 @@
     return '<div class="field"><label for="' + id + '">' + label + '</label>' +
       '<input type="number" id="' + id + '" data-bind="' + key + '" data-scale="' + scale + '" value="' + Math.round(value * scale) + '" min="' + min + '" max="' + max + '" step="' + step + '" inputmode="numeric"></div>';
   }
+  // A checkbox bound to a true/false state path.
+  function checkField(id, label, on, key, note) {
+    return '<label class="check" for="' + id + '"><input type="checkbox" id="' + id + '" data-bind-check="' + key + '"' + (on ? ' checked' : '') + '>' +
+      '<span><b>' + label + '</b>' + (note ? '<span class="hint">' + note + '</span>' : '') + '</span></label>';
+  }
+  // A select bound to a state path. options: [value, label]
+  function selectField(id, label, value, key, options) {
+    return '<div class="field"><label for="' + id + '">' + label + '</label><select id="' + id + '" data-bind-select="' + key + '">' +
+      options.map(([v, l]) => '<option value="' + v + '"' + (String(v) === String(value) ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></div>';
+  }
+
   // Stacked share bar with a legend. parts: [label, count, colorClass]
   function split(title, parts) {
     const total = parts.reduce((x, p) => x + p[1], 0) || 1;
@@ -276,6 +290,7 @@
   const TABS = [
     ['office', 'Office'],
     ['applications', 'Applications'],
+    ['recruiting', 'Recruiting & staff'],
     ['majors', 'Majors'],
     ['classes', 'Classes'],
     ['students', 'Students'],
@@ -289,7 +304,8 @@
     const s = G.state;
     setSchoolColors(s.school.primary, s.school.secondary);
     const m = G.metrics();
-    const pending = s.applicants.filter(a => a.decision === 'pending').length;
+    const visible = G.visibleApplicants();
+    const pending = visible.filter(a => a.decision === 'pending').length;
     const cov = G.seatCoverage();
     const st = G.stateByCode(s.school.state);
     const counts = {
@@ -297,7 +313,7 @@
       housing: m.housing.beds, greek: s.greek.length, sports: s.sports.length
     };
     const renderers = {
-      office: renderOffice, applications: renderApplications, majors: renderMajors, classes: renderClasses,
+      office: renderOffice, applications: renderApplications, recruiting: renderRecruiting, majors: renderMajors, classes: renderClasses,
       students: renderStudents, housing: renderHousing, greek: renderGreek, sports: renderSports, tuition: renderTuition
     };
     const body = renderers[ui.tab]();
@@ -310,9 +326,11 @@
             '<div class="mast-text"><div class="mast-name">' + esc(s.school.name) + '</div>' +
             '<div class="mast-sub">' + esc(s.school.mascot) + ' · ' + typeLabel(s.school.type) + ' · ' + esc(st ? st.name : s.school.state) + '</div></div>' +
           '</div>' +
-          '<div class="mast-cycle"><span class="eyebrow">Admissions cycle</span><strong>' + s.year + ' · Class of ' + (s.year + 4) + '</strong></div>' +
+          '<div class="mast-cycle"><span class="eyebrow">' + (isEarlyPhase() ? 'Early round' : 'Admissions cycle') + '</span><strong>' + s.year + ' · Class of ' + (s.year + 4) + '</strong></div>' +
           '<div class="mast-actions">' +
-            '<button class="btn btn-stripe" data-action="end-season">End season</button>' +
+            (isEarlyPhase()
+              ? '<button class="btn btn-stripe" data-action="release-early">Send early decisions</button>'
+              : '<button class="btn btn-stripe" data-action="end-season">End season</button>') +
             '<button class="btn btn-on-school" data-action="to-menu">Menu</button>' +
           '</div>' +
         '</div>' +
@@ -321,7 +339,7 @@
         stat('Budget', money(s.budget), s.budget < 0 ? 'bad' : '') +
         stat('Prestige', s.prestige.toFixed(1) + '<small>/100</small>') +
         stat('Students', num(s.students.length)) +
-        stat('Files pending', num(pending) + '<small> of ' + num(s.applicants.length) + '</small>') +
+        stat(isEarlyPhase() ? 'Early files pending' : 'Files pending', num(pending) + '<small> of ' + num(visible.length) + '</small>') +
         stat('Campus life', Math.round(m.life.score) + '<small>/100</small>', m.life.score < 40 ? 'bad' : '') +
         stat('Seat coverage', pct(cov), cov < 1 ? 'bad' : '') +
       '</div>' +
@@ -342,17 +360,16 @@
   }
 
   // ---------- office ----------
-  function expectedFreshmen() {
-    const s = G.state;
-    return s.applicants.reduce((x, a) => x + (a.decision === 'admit' ? G.enrollChance(a) : 0), 0);
-  }
+  const expectedFreshmen = () => G.expectedFreshmen();
 
   function renderOffice() {
     const s = G.state;
     const m = G.metrics();
-    const counts = { admit: 0, waitlist: 0, deny: 0, pending: 0 };
-    for (const a of s.applicants) counts[a.decision]++;
-    const total = s.applicants.length || 1;
+    const visible = G.visibleApplicants();
+    const counts = { admit: 0, waitlist: 0, defer: 0, deny: 0, pending: 0 };
+    for (const a of visible) counts[a.decision]++;
+    const total = visible.length || 1;
+    const keys = ['admit', isEarlyPhase() ? 'defer' : 'waitlist', 'deny', 'pending'];
     const expected = expectedFreshmen();
     const fin = G.finances();
     const yearNames = ['Freshmen', 'Sophomores', 'Juniors', 'Seniors'];
@@ -361,11 +378,14 @@
 
     const cycle = '<section class="card span-2">' +
       '<div class="card-head"><h2>This cycle</h2><button class="btn btn-primary" data-action="tab" data-tab="applications">Review applications</button></div>' +
-      '<div class="decision-bar" role="img" aria-label="' + counts.admit + ' admitted, ' + counts.waitlist + ' waitlisted, ' + counts.deny + ' denied, ' + counts.pending + ' pending">' +
-        ['admit', 'waitlist', 'deny', 'pending'].map(k => counts[k] ? '<span class="seg seg-' + k + '" style="flex:' + counts[k] / total + '"></span>' : '').join('') +
+      (isEarlyPhase()
+        ? '<p class="note">Early round: ' + plural(visible.length, 'student') + ' applied Early Decision or Early Action. Admit, defer or deny them, then send early decisions to open the regular round (' + num(s.applicants.length - visible.length) + ' more applicants).</p>'
+        : '') +
+      '<div class="decision-bar" role="img" aria-label="' + keys.map(k => counts[k] + ' ' + DECISION_LABEL[k].toLowerCase()).join(', ') + '">' +
+        keys.map(k => counts[k] ? '<span class="seg seg-' + k + '" style="flex:' + counts[k] / total + '"></span>' : '').join('') +
       '</div>' +
       '<ul class="legend">' +
-        ['admit', 'waitlist', 'deny', 'pending'].map(k => '<li><span class="dot dot-' + k + '"></span>' + DECISION_LABEL[k] + ' <b>' + num(counts[k]) + '</b></li>').join('') +
+        keys.map(k => '<li><span class="dot dot-' + k + '"></span>' + DECISION_LABEL[k] + ' <b>' + num(counts[k]) + '</b></li>').join('') +
       '</ul>' +
       '<div class="kv-row">' +
         kv('Applicants', num(s.applicants.length)) +
@@ -389,6 +409,10 @@
         numField('target-class', 'Target class size', s.targetClass, 10, 100000, 5, 'targetClass') +
       '</div>' +
       '<p class="hint">The target class size decides how many waitlisted students get offered a seat. Make sure you have dorm beds and class seats for them.</p>' +
+      '<fieldset class="field field-gap"><legend>Early programs <span class="muted small">(take effect next cycle)</span></legend>' +
+        checkField('early-ed', 'Early Decision', s.early.ed, 'early.ed', 'Binding. Admits must enroll unless their aid falls short. Draws families who can pay.') +
+        checkField('early-ea', 'Early Action', s.early.ea, 'early.ea', 'Non-binding, but early admits are more likely to say yes. Draws more applicants.') +
+      '</fieldset>' +
     '</section>';
 
     const out = G.applicantOutlook();
@@ -422,10 +446,11 @@
     const history = '<section class="card span-2">' +
       '<div class="card-head"><h2>History</h2></div>' +
       (s.history.length
-        ? '<div class="table-wrap"><table class="table"><thead><tr><th>Cycle</th><th class="num">Applied</th><th class="num">Accept rate</th><th class="num">Yield</th><th class="num">Freshmen</th><th class="num">Women</th><th class="num">In-state</th><th class="num">Avg GPA</th><th class="num">Students</th><th class="num">Campus life</th><th class="num">Prestige</th><th class="num">Net</th><th class="num">Budget</th></tr></thead><tbody>' +
+        ? '<div class="table-wrap"><table class="table"><thead><tr><th>Cycle</th><th class="num">Applied</th><th class="num">Accept rate</th><th class="num">Yield</th><th class="num">Freshmen</th><th class="num">Women</th><th class="num">In-state</th><th class="num">Avg GPA</th><th class="num">Grad rate</th><th class="num">Grads earn</th><th class="num">Students</th><th class="num">Campus life</th><th class="num">Prestige</th><th class="num">Net</th><th class="num">Budget</th></tr></thead><tbody>' +
           s.history.slice().reverse().map(h => '<tr><td>' + h.year + '</td><td class="num">' + num(h.applied) + '</td><td class="num">' + pct(h.acceptRate) + '</td><td class="num">' + pct(h.yieldRate) + '</td><td class="num">' + num(h.enrolled) + '</td>' +
             '<td class="num">' + (h.femalePct != null ? pct(h.femalePct) : '—') + '</td><td class="num">' + (h.inStatePct != null ? pct(h.inStatePct) : '—') + '</td>' +
-            '<td class="num">' + (h.avgGpa != null ? h.avgGpa.toFixed(2) : '—') + '</td><td class="num">' + num(h.students) + '</td><td class="num">' + (h.life != null ? Math.round(h.life) : '—') + '</td><td class="num">' + h.prestige.toFixed(1) + '</td><td class="num ' + (h.net < 0 ? 'tone-bad' : '') + '">' + money(h.net) + '</td><td class="num">' + money(h.budget) + '</td></tr>').join('') +
+            '<td class="num">' + (h.avgGpa != null ? h.avgGpa.toFixed(2) : '—') + '</td>' +
+            '<td class="num">' + (h.gradRate != null ? pct(h.gradRate) : '—') + '</td><td class="num">' + (h.salary ? money(h.salary) : '—') + '</td><td class="num">' + num(h.students) + '</td><td class="num">' + (h.life != null ? Math.round(h.life) : '—') + '</td><td class="num">' + h.prestige.toFixed(1) + '</td><td class="num ' + (h.net < 0 ? 'tone-bad' : '') + '">' + money(h.net) + '</td><td class="num">' + money(h.budget) + '</td></tr>').join('') +
           '</tbody></table></div>'
         : '<p class="muted">Your first cycle is underway. Results show up here after you end the season.</p>') +
     '</section>';
@@ -454,7 +479,11 @@
     ['legacy', 'Legacies', a => a.legacy],
     ['firstgen', 'First-generation', a => a.firstGen],
     ['needaid', 'Can’t afford the net price', a => G.aidPackage(a).gap > 0],
-    ['greek', 'Want to go Greek', a => a.greekInt]
+    ['greek', 'Want to go Greek', a => a.greekInt],
+    ['early', 'Applied early (ED or EA)', a => G.isEarly(a)],
+    ['ed', 'Early Decision', a => a.round === 'ED'],
+    ['deferred', 'Deferred from early round', a => a.deferred],
+    ['flagged', 'Flagged by staff', a => a.flagged]
   ];
 
   // Applicants in the current view and search, any decision.
@@ -462,7 +491,7 @@
     const s = G.state;
     const q = ui.search.trim().toLowerCase();
     const v = VIEWS.find(x => x[0] === ui.view) || VIEWS[0];
-    let list = s.applicants.filter(v[2]);
+    let list = G.visibleApplicants().filter(v[2]);
     if (q) {
       list = list.filter(a => (a.name + ' ' + hometown(a) + ' ' + majorName(a.major) + ' ' + (a.sport ? G.sportById(a.sport).name : '') + ' ' + (a.hook ? hookLabel(a.hook) : '')).toLowerCase().includes(q));
     }
@@ -485,14 +514,24 @@
   function renderApplications() {
     const s = G.state;
     const inView = viewList();
-    const counts = { all: inView.length, pending: 0, admit: 0, waitlist: 0, deny: 0 };
+    const counts = { all: inView.length, pending: 0, admit: 0, waitlist: 0, defer: 0, deny: 0 };
     for (const a of inView) counts[a.decision]++;
-    const filters = [['pending', 'Pending'], ['admit', 'Admitted'], ['waitlist', 'Waitlisted'], ['deny', 'Denied'], ['all', 'All']];
+    const hold = isEarlyPhase() ? ['defer', 'Deferred'] : ['waitlist', 'Waitlisted'];
+    if (ui.filter === 'defer' && !isEarlyPhase()) ui.filter = 'waitlist';
+    if (ui.filter === 'waitlist' && isEarlyPhase()) ui.filter = 'defer';
+    const filters = [['pending', 'Pending'], ['admit', 'Admitted'], hold, ['deny', 'Denied'], ['all', 'All']];
+    const staffLeft = G.staffRemaining();
+    const staffBtn = '<button class="btn btn-small btn-primary" data-action="staff-read"' + (staffLeft && counts.pending ? '' : ' disabled') + '>Have staff read pending files</button>' +
+      ' <span class="muted small">' + num(staffLeft) + ' reads left this cycle · <button class="linkish" data-action="tab" data-tab="recruiting">rules</button></span>';
     const expected = expectedFreshmen();
     const admits = s.applicants.filter(a => a.decision === 'admit');
     const proj = demographics(admits, G.enrollChance);
 
     return '<div class="apps">' +
+      (isEarlyPhase()
+        ? '<div class="phase-banner"><div><b>Early round.</b> ' + plural(inView.length, 'file') + ' from Early Decision and Early Action applicants. Early Decision admits are binding. Defer anyone you want to see again with the regular pool.</div>' +
+          '<button class="btn btn-stripe btn-small" data-action="release-early">Send early decisions</button></div>'
+        : (s.earlyReport ? '<div class="phase-banner"><div><b>Regular round.</b> Early decisions are out: ' + plural(s.earlyReport.committed, 'student') + ' committed through Early Decision, ' + num(s.earlyReport.eaAdmitted) + ' admitted Early Action, ' + num(s.earlyReport.deferred) + ' deferred into this pool.</div></div>' : '')) +
       '<div class="apps-toolbar">' +
         '<div class="chips" role="group" aria-label="Filter by decision">' +
           filters.map(([id, label]) => '<button class="chip-btn' + (ui.filter === id ? ' is-on' : '') + '" data-action="filter" data-filter="' + id + '" aria-pressed="' + (ui.filter === id) + '">' + label + ' <b>' + num(counts[id]) + '</b></button>').join('') +
@@ -507,16 +546,17 @@
       '</div>' +
       '<div class="apps-bulk">' +
         '<p class="bulk-scope">Bulk actions apply to the <b>' + num(counts.pending) + '</b> pending files in this view.</p>' +
+        '<div class="bulk bulk-staff">' + staffBtn + '</div>' +
         '<div class="bulk"><label for="bulk-admit">Admit with Academic Index at least</label>' +
           '<input type="number" id="bulk-admit" data-ui="bulkAdmit" value="' + ui.bulkAdmit + '" min="0" max="100">' +
           '<button class="btn btn-small btn-admit" data-action="bulk-admit">Admit</button></div>' +
         '<div class="bulk"><label for="bulk-top">Admit the top</label>' +
           '<input type="number" id="bulk-top" data-ui="bulkTop" value="' + ui.bulkTop + '" min="1" max="100000">' +
           '<span>by index</span><button class="btn btn-small btn-admit" data-action="bulk-top">Admit</button></div>' +
-        '<div class="bulk"><label for="bulk-wait">Waitlist with index at least</label>' +
+        '<div class="bulk"><label for="bulk-wait">' + holdWord() + ' with index at least</label>' +
           '<input type="number" id="bulk-wait" data-ui="bulkWait" value="' + ui.bulkWait + '" min="0" max="100">' +
-          '<button class="btn btn-small btn-wait" data-action="bulk-wait">Waitlist</button>' +
-          '<button class="btn btn-small btn-ghost" data-action="bulk-wait-rest">Waitlist all the rest</button></div>' +
+          '<button class="btn btn-small btn-wait" data-action="bulk-wait">' + holdWord() + '</button>' +
+          '<button class="btn btn-small btn-ghost" data-action="bulk-wait-rest">' + holdWord() + ' all the rest</button></div>' +
         '<div class="bulk"><label for="bulk-deny">Deny below</label>' +
           '<input type="number" id="bulk-deny" data-ui="bulkDeny" value="' + ui.bulkDeny + '" min="0" max="100">' +
           '<button class="btn btn-small btn-deny" data-action="bulk-deny">Deny</button></div>' +
@@ -531,7 +571,7 @@
     const all = currentList();
     if (!all.length) {
       return '<div class="empty"><p>No applications match.</p>' +
-        (ui.filter === 'pending' && ui.view === 'all' && !ui.search ? '<p class="muted">Every file has a decision. End the season from the top bar when you’re ready.</p>' : '') + '</div>';
+        (ui.filter === 'pending' && ui.view === 'all' && !ui.search ? '<p class="muted">Every file has a decision. ' + (isEarlyPhase() ? 'Send early decisions to open the regular round.' : 'End the season from the top bar when you’re ready.') + '</p>' : '') + '</div>';
     }
     const pages = Math.ceil(all.length / PAGE_SIZE);
     ui.page = Math.min(ui.page, pages - 1);
@@ -555,6 +595,10 @@
       if (a.hook) tags.push('<span class="tag ' + (a.hook === 'trouble' ? 'tag-bad' : 'tag-star') + '">' + (a.hook === 'trouble' ? 'Record' : '★ Standout') + '</span>');
       if (a.legacy) tags.push('<span class="tag">Legacy</span>');
       if (a.firstGen) tags.push('<span class="tag">First-gen</span>');
+      if (a.round === 'ED' || a.round === 'EA') tags.push('<span class="tag tag-round" title="' + ROUND_LABEL[a.round] + '">' + a.round + '</span>');
+      if (a.deferred) tags.push('<span class="tag">Deferred</span>');
+      if (a.flagged) tags.push('<span class="tag tag-flag" title="Your staff left this file for you">Flagged</span>');
+      const locked = G.isLocked(a);
       return '<tr class="row' + (ui.openId === a.id ? ' is-open' : '') + '" data-action="open-app" data-id="' + a.id + '" tabindex="0">' +
         '<td><div class="cell-name">' + esc(a.name) + ' ' + tags.join(' ') + '</div><div class="cell-sub">' + esc(hometown(a)) + ' · ' + residencyWord(a) + ' · ' + a.gender + '</div></td>' +
         '<td class="num">' + a.gpa.toFixed(2) + '</td>' +
@@ -566,13 +610,13 @@
         '<td>' + (sp ? esc(sp.name) + ' <span class="stars" aria-label="' + a.stars + ' of 5 stars">' + stars(a.stars) + '</span>' : '<span class="muted">—</span>') + '</td>' +
         '<td class="num">' + (aid.total ? money(aid.total) : '<span class="muted">—</span>') + (aid.gap > 0 ? ' <span class="tag tag-bad" title="Family is short of the net price">Gap</span>' : '') + '</td>' +
         '<td><span class="pill tone-' + yieldTone(p) + '">' + yieldWord(p) + ' ' + pct(p) + '</span></td>' +
-        '<td>' + (a.decision === 'pending'
+        '<td>' + (a.decision === 'pending' && !locked
           ? '<span class="quick" role="group" aria-label="Decide ' + esc(a.name) + '">' +
               '<button class="qbtn q-admit" data-action="row-decide" data-id="' + a.id + '" data-d="admit" title="Admit" aria-label="Admit ' + esc(a.name) + '">A</button>' +
-              '<button class="qbtn q-wait" data-action="row-decide" data-id="' + a.id + '" data-d="waitlist" title="Waitlist" aria-label="Waitlist ' + esc(a.name) + '">W</button>' +
+              '<button class="qbtn q-wait" data-action="row-decide" data-id="' + a.id + '" data-d="waitlist" title="' + holdWord() + '" aria-label="' + holdWord() + ' ' + esc(a.name) + '">' + (isEarlyPhase() ? 'F' : 'W') + '</button>' +
               '<button class="qbtn q-deny" data-action="row-decide" data-id="' + a.id + '" data-d="deny" title="Deny" aria-label="Deny ' + esc(a.name) + '">D</button>' +
             '</span>'
-          : '<span class="decision decision-' + a.decision + '">' + DECISION_LABEL[a.decision] + '</span>') + '</td>' +
+          : '<span class="decision decision-' + a.decision + '">' + (a.committed ? 'Committed' : DECISION_LABEL[a.decision]) + '</span>' + (locked ? ' <span class="muted small" title="Decided in the early round">' + a.round + '</span>' : '')) + '</td>' +
       '</tr>';
     }).join('');
     const pager = pages > 1
@@ -616,6 +660,7 @@
           '<header class="folder-head">' +
             '<h2 id="folder-name">' + esc(a.name) + '</h2>' +
             '<p class="folder-from">' + esc(hometown(a)) + ' · ' + residencyWord(a) + ' · ' + genderWord(a.gender) + '</p>' +
+            '<p class="folder-round">' + ROUND_LABEL[a.round || 'RD'] + (a.deferred ? ' · deferred to the regular round' : '') + (a.committed ? ' · <b>committed</b>' : '') + (a.flagged ? ' · flagged for you by staff' : '') + '</p>' +
           '</header>' +
           (hook
             ? '<section class="folder-sec standout' + (a.hook === 'trouble' ? ' standout-bad' : '') + '"><h3>' + (a.hook === 'trouble' ? 'Flag' : '★ Standout') + '</h3><p><b>' + esc(hook.label) + '.</b> ' + esc(hook.blurb) + '</p></section>'
@@ -673,10 +718,12 @@
             ? '<div class="stamp stamp-' + a.decision + (ui.stampAnim ? ' stamp-in' : ' stamp-static') + '">' + STAMP_LABEL[a.decision] + '</div>' : '') +
         '</div></div>' +
         '<div class="drawer-actions">' +
-          '<button class="btn btn-admit" data-action="decide" data-d="admit"' + (a.decision === 'admit' ? ' aria-pressed="true"' : '') + '><kbd>A</kbd> Admit</button>' +
-          '<button class="btn btn-wait" data-action="decide" data-d="waitlist"' + (a.decision === 'waitlist' ? ' aria-pressed="true"' : '') + '><kbd>W</kbd> Waitlist</button>' +
-          '<button class="btn btn-deny" data-action="decide" data-d="deny"' + (a.decision === 'deny' ? ' aria-pressed="true"' : '') + '><kbd>D</kbd> Deny</button>' +
-          (a.decision !== 'pending' ? '<button class="btn btn-ghost btn-small" data-action="decide" data-d="pending">Undo</button>' : '') +
+          (G.isLocked(a)
+            ? '<p class="small muted">Decided in the early round' + (a.committed ? ': this student is committed' : '') + '. Early decisions can’t be changed.</p>'
+            : '<button class="btn btn-admit" data-action="decide" data-d="admit"' + (a.decision === 'admit' ? ' aria-pressed="true"' : '') + '><kbd>A</kbd> Admit</button>' +
+              '<button class="btn btn-wait" data-action="decide" data-d="waitlist"' + (a.decision === 'waitlist' || a.decision === 'defer' ? ' aria-pressed="true"' : '') + '><kbd>W</kbd> ' + holdWord() + '</button>' +
+              '<button class="btn btn-deny" data-action="decide" data-d="deny"' + (a.decision === 'deny' ? ' aria-pressed="true"' : '') + '><kbd>D</kbd> Deny</button>' +
+              (a.decision !== 'pending' ? '<button class="btn btn-ghost btn-small" data-action="decide" data-d="pending">Undo</button>' : '')) +
           '<label class="toggle" for="auto-advance"><input type="checkbox" id="auto-advance" data-ui-check="autoAdvance"' + (ui.autoAdvance ? ' checked' : '') + '> Next file after stamping</label>' +
         '</div>' +
       '</aside>';
@@ -713,7 +760,8 @@
     const a = s.applicants.find(x => x.id === ui.openId);
     if (!a) return;
     const wasPending = a.decision === 'pending';
-    a.decision = d;
+    if (!G.setDecision(a, d)) return;
+    d = a.decision;
     G.save();
     ui.stampAnim = d !== 'pending';
     renderDrawer();
@@ -748,6 +796,80 @@
     }
   }
 
+  // ---------- recruiting & staff ----------
+  function renderRecruiting() {
+    const s = G.state;
+    const st = s.staff, r = st.rules, rec = s.recruit;
+    const cap = G.staffCapacity();
+    const mix = G.residencyMix();
+    const countries = Array.from(new Set(D.INTERNATIONAL.map(x => x[1]))).sort();
+    const campaignCost = rec.states.length * D.RECRUITING.stateCost + rec.countries.length * D.RECRUITING.countryCost;
+    const appsByState = {}, appsByCountry = {};
+    for (const a of s.applicants) {
+      if (a.intl) appsByCountry[a.region] = (appsByCountry[a.region] || 0) + 1;
+      else if (a.stateCode) appsByState[a.stateCode] = (appsByState[a.stateCode] || 0) + 1;
+    }
+
+    const staff = '<section class="card">' +
+      '<div class="card-head"><h2>Admissions staff</h2><span class="muted small">' + money(D.STAFF.readerCost) + ' per reader per year</span></div>' +
+      '<div class="readers">' +
+        '<button class="btn btn-ghost" data-action="readers" data-d="-1"' + (st.readers ? '' : ' disabled') + ' aria-label="Let a reader go">−</button>' +
+        '<div class="kv"><span class="kv-label">Readers</span><span class="kv-value">' + num(st.readers) + '</span></div>' +
+        '<button class="btn btn-ghost" data-action="readers" data-d="1" aria-label="Hire a reader">+</button>' +
+        '<button class="btn btn-ghost btn-small" data-action="readers" data-d="10">+10</button>' +
+        '<div class="kv"><span class="kv-label">Files they can read per cycle</span><span class="kv-value">' + num(cap) + '</span></div>' +
+        '<div class="kv"><span class="kv-label">Read this cycle</span><span class="kv-value">' + num(st.used) + ' <small>of ' + num(cap) + '</small></span></div>' +
+      '</div>' +
+      '<p class="hint">Each reader handles ' + num(D.STAFF.filesPerReader) + ' files a cycle. Send them to work from Applications, or let them read what’s left at the end of the season. Last cycle drew ' + num(s.history.length ? s.history[s.history.length - 1].applied : s.applicants.length) + ' applications.</p>' +
+      '<h3 class="sub">Reader rules</h3>' +
+      '<div class="fields">' +
+        numField('rule-admit', 'Admit with index at least', r.admit, 0, 100, 1, 'staff.rules.admit') +
+        numField('rule-wait', 'Waitlist / defer at least', r.wait, 0, 100, 1, 'staff.rules.wait') +
+        numField('rule-stars', 'Admit recruits rated at least (★)', r.athleteStars, 1, 6, 1, 'staff.rules.athleteStars') +
+        selectField('rule-standouts', 'Standouts', r.standouts, 'staff.rules.standouts', [['flag', 'Flag them for me'], ['admit', 'Admit them']]) +
+        selectField('rule-records', 'Disciplinary records', r.records, 'staff.rules.records', [['deny', 'Deny'], ['flag', 'Flag them for me']]) +
+      '</div>' +
+      '<div class="checks">' +
+        checkField('rule-stop', 'Stop admitting once the class is full', r.stopAtTarget, 'staff.rules.stopAtTarget', 'When expected freshmen pass the target, readers waitlist (or defer) instead of admitting.') +
+        checkField('rule-auto', 'Read leftover files at the end of the season', st.autoRead, 'staff.autoRead', 'Otherwise pending files are denied unread.') +
+      '</div>' +
+      '<p class="hint">Recruits only count if you have their team (set the star rule to 6 to turn it off). Flagged files stay pending, tagged for you to read yourself.</p>' +
+    '</section>';
+
+    const budget = '<section class="card">' +
+      '<div class="card-head"><h2>Recruiting budget</h2><span class="muted small">' + money(rec.marketing + rec.athletics + campaignCost) + ' a year</span></div>' +
+      '<div class="fields">' +
+        numField('rec-marketing', 'Marketing & ads ($/yr)', rec.marketing, 0, 100000000, 50000, 'recruit.marketing') +
+        numField('rec-athletics', 'Athletic recruiting ($/yr)', rec.athletics, 0, 20000000, 50000, 'recruit.athletics') +
+      '</div>' +
+      '<div class="kv-row">' +
+        kv('Marketing lift', '×' + (1 + 0.12 * Math.log2(1 + rec.marketing / 200000)).toFixed(2)) +
+        kv('Campaign lift', '×' + mix.campaign.toFixed(2)) +
+        kv('International share', pct(mix.intlRate) + ' <small>of out-of-state</small>') +
+      '</div>' +
+      '<p class="hint">Marketing raises applications everywhere with diminishing returns but no cap. Athletic recruiting brings more recruits and better star ratings, up to about ' + money(2000000) + '. Changes shape next cycle’s pool.</p>' +
+    '</section>';
+
+    const stateChips = D.STATES.map(x => {
+      const on = rec.states.includes(x.code);
+      return '<button class="chip-btn camp' + (on ? ' is-on' : '') + '" data-action="campaign" data-kind="states" data-id="' + x.code + '" aria-pressed="' + on + '" title="' + esc(x.name) + '">' +
+        x.code + ' <b>' + num(appsByState[x.code] || 0) + '</b></button>';
+    }).join('');
+    const countryChips = countries.map(c => {
+      const on = rec.countries.includes(c);
+      return '<button class="chip-btn camp' + (on ? ' is-on' : '') + '" data-action="campaign" data-kind="countries" data-id="' + esc(c) + '" aria-pressed="' + on + '">' +
+        esc(c) + ' <b>' + num(appsByCountry[c] || 0) + '</b></button>';
+    }).join('');
+    const campaigns = '<section class="card span-2">' +
+      '<div class="card-head"><h2>Recruiting campaigns</h2><span class="muted small">' + plural(rec.states.length, 'state') + ' · ' + plural(rec.countries.length, 'country', 'countries') + ' · ' + money(campaignCost) + ' a year</span></div>' +
+      '<p class="hint">Send recruiters to high school fairs. A state campaign (' + money(D.RECRUITING.stateCost) + '/yr) triples applications from that state; targeting your home state raises your in-state share. A country campaign (' + money(D.RECRUITING.countryCost) + '/yr) quadruples applicants from there and grows your international share. Numbers show this cycle’s applicants.</p>' +
+      '<h3 class="sub">States</h3><div class="chips camp-grid">' + stateChips + '</div>' +
+      '<h3 class="sub">Countries</h3><div class="chips">' + countryChips + '</div>' +
+    '</section>';
+
+    return '<div class="grid">' + staff + budget + campaigns + '</div>';
+  }
+
   // ---------- majors ----------
   function renderMajors() {
     const s = G.state;
@@ -772,8 +894,9 @@
       '<section class="card">' +
         '<div class="card-head"><h2>Majors you offer</h2><span class="muted small">' + offered.length + ' of ' + D.MAJORS.length + ' departments · ' + money(offered.reduce((x, mj) => x + mj.cost, 0)) + ' a year</span></div>' +
         '<p class="hint">Applicants whose major you don’t offer are far less likely to enroll. Each department needs at least 2 classes and enough seats for its majors (see Classes). Majors draw different mixes of men and women, so your catalog shapes your gender balance.</p>' +
-        '<div class="table-wrap"><table class="table"><thead><tr><th>Major</th><th>Dept</th><th>Area</th><th class="num">Students</th><th class="num">Women</th><th class="num">Applicants this cycle</th><th class="num">Classes</th><th class="num">Seats / majors</th><th class="num">Cost / year</th><th></th></tr></thead><tbody>' +
+        '<div class="table-wrap"><table class="table"><thead><tr><th>Major</th><th>Dept</th><th>Area</th><th class="num">Students</th><th class="num">Women</th><th class="num">Applicants this cycle</th><th class="num">Classes</th><th class="num">Seats / majors</th><th class="num">Grads earn</th><th class="num">Cost / year</th><th></th></tr></thead><tbody>' +
         offered.map(mj => {
+          const out = G.majorOutcome(mj.id);
           const nc = m.deptClasses[mj.id] || 0;
           const n = m.majorCount[mj.id] || 0;
           const cov = G.deptCoverage(mj.id);
@@ -781,10 +904,11 @@
             '<td class="num">' + (n ? pct((women[mj.id] || 0) / n) : '—') + '</td><td class="num">' + num(demand[mj.id] || 0) + '</td>' +
             '<td class="num">' + (nc < 2 ? '<span class="tone-warn">' + nc + '</span>' : nc) + '</td>' +
             '<td class="num"><span class="' + (cov < 1 ? 'tone-bad' : 'tone-good') + '">' + num(m.deptSeats[mj.id] || 0) + ' / ' + num(n) + '</span></td>' +
+            '<td class="num" title="' + (out ? pct(out.placed) + ' employed or in grad school' : 'National typical starting salary') + '">' + (out && out.salary ? money(out.salary) : '<span class="muted">~' + money(D.OUTCOMES[mj.id][0]) + '</span>') + '</td>' +
             '<td class="num">' + money(mj.cost) + '</td>' +
             '<td class="act"><button class="btn btn-ghost btn-small" data-action="goto-dept" data-id="' + mj.id + '">Classes</button> <button class="btn btn-ghost btn-small" data-action="ask-drop-major" data-id="' + mj.id + '">Close</button></td></tr>';
         }).join('') +
-        (undeclared ? '<tr><td class="muted">Undeclared</td><td></td><td></td><td class="num">' + undeclared + '</td><td colspan="6" class="muted small">Students whose department closed</td></tr>' : '') +
+        (undeclared ? '<tr><td class="muted">Undeclared</td><td></td><td></td><td class="num">' + undeclared + '</td><td colspan="7" class="muted small">Students whose department closed</td></tr>' : '') +
         '</tbody></table></div>' +
       '</section>' +
       '<section>' +
@@ -796,7 +920,7 @@
         (catalog.length ? catalog.map(mj => '<article class="cat-item">' +
           '<div class="cat-top"><h3>' + esc(mj.name) + '</h3><span class="mono muted">' + mj.dept + '</span></div>' +
           '<p class="cat-area">' + esc(areaName(mj.area)) + '</p>' +
-          '<dl class="cat-meta"><div><dt>Cost / year</dt><dd>' + money(mj.cost) + '</dd></div><div><dt>Applicants want it</dt><dd>' + num(demand[mj.id] || 0) + '</dd></div><div><dt>Draws</dt><dd>' + pct(mj.f) + ' women</dd></div></dl>' +
+          '<dl class="cat-meta"><div><dt>Cost / year</dt><dd>' + money(mj.cost) + '</dd></div><div><dt>Applicants want it</dt><dd>' + num(demand[mj.id] || 0) + '</dd></div><div><dt>Draws</dt><dd>' + pct(mj.f) + ' women</dd></div><div><dt>Grads earn</dt><dd>~' + money(D.OUTCOMES[mj.id][0]) + '</dd></div></dl>' +
           '<p class="cat-note">Courses: ' + mj.courses.map(esc).join(', ') + '</p>' +
           '<button class="btn btn-primary btn-small" data-action="add-major" data-id="' + mj.id + '">Open department</button>' +
         '</article>').join('') : '<p class="muted">Nothing left to open here.</p>') +
@@ -949,7 +1073,35 @@
         : '<p class="muted">Notable alumni appear here once your standouts graduate.</p>') +
     '</section>';
 
-    return '<div class="grid">' + lifeCard + who + standoutCard + alumni + '</div>';
+    const oc = s.outcomes;
+    const last = oc[oc.length - 1];
+    const byPay = {};
+    for (const r of oc.slice(-3)) for (const [id, b] of Object.entries(r.byMajor)) {
+      const x = byPay[id] || (byPay[id] = [0, 0, 0]);
+      x[0] += b[0]; x[1] += b[1]; x[2] += b[2];
+    }
+    const payRows = Object.entries(byPay).filter(([, b]) => b[1]).map(([id, b]) => [majorName(id), b[2] / b[1], b[1] / b[0], b[0]]).sort((a, b) => b[1] - a[1]);
+    const outcomes = '<section class="card span-2">' +
+      '<div class="card-head"><h2>Graduation & careers</h2><span class="muted small">Outcome score ' + Math.round(G.outcomeScore()) + '/100</span></div>' +
+      (last
+        ? '<div class="kv-row">' +
+            kv('Class of ' + last.year + ' graduated', num(last.graduated) + ' <small>of ' + num(last.cohort) + ' who started</small>') +
+            kv('Graduation rate', pct(last.gradRate)) +
+            kv('Employed or in grad school', pct(last.placed)) +
+            kv('Median starting salary', money(last.salary)) +
+          '</div>' +
+          '<p class="hint">Graduation rates, job placement and pay feed prestige, draw applicants and set how much alumni give. Students who stay in a well-staffed major with seats in their classes are more likely to finish; stronger students and a more prestigious degree land better jobs.</p>' +
+          '<div class="grid grid-tight">' +
+            '<div><h3 class="sub">Starting pay by major <span class="muted">(last 3 classes)</span></h3>' +
+              bars(payRows.slice(0, 10).map(r => [r[0], r[1], money(r[1])])) + '</div>' +
+            '<div><h3 class="sub">Recent classes</h3><div class="table-wrap"><table class="table"><thead><tr><th>Class</th><th class="num">Grads</th><th class="num">Grad rate</th><th class="num">Placed</th><th class="num">Median pay</th></tr></thead><tbody>' +
+              oc.slice(-6).reverse().map(r => '<tr><td>' + r.year + '</td><td class="num">' + num(r.graduated) + '</td><td class="num">' + pct(r.gradRate) + '</td><td class="num">' + pct(r.placed) + '</td><td class="num">' + money(r.salary) + '</td></tr>').join('') +
+            '</tbody></table></div></div>' +
+          '</div>'
+        : '<p class="muted">Your first graduating class crosses the stage when you end this season.</p>') +
+    '</section>';
+
+    return '<div class="grid">' + lifeCard + who + outcomes + standoutCard + alumni + '</div>';
   }
 
   // ---------- housing ----------
@@ -1068,14 +1220,10 @@
 
   function renderSports() {
     const s = G.state;
-    const m = G.metrics();
     const recruitsApplying = {};
     for (const a of s.applicants) if (a.sport) recruitsApplying[a.sport] = (recruitsApplying[a.sport] || 0) + 1;
     const offered = s.sports.map(G.sportById).filter(Boolean);
     const cost = list => money(list.reduce((x, sp) => x + sp.cost, 0));
-    const womenShare = m.n ? m.female / m.n : 0;
-    const womenAthletes = m.athletes ? m.athletesF / m.athletes : 0;
-    const gap = Math.abs(womenShare - womenAthletes);
 
     const teamRows = list => list.sort((a, b) => a.base.localeCompare(b.base)).map(sp => {
       const roster = G.rosterFor(sp.id);
@@ -1102,15 +1250,42 @@
         '<button class="btn btn-primary btn-small" data-action="add-sport" data-id="' + sp.id + '">Launch program</button>' +
       '</article>').join('');
 
-    return '<div class="stack">' +
+    const ath = s.athletics;
+    const div = D.DIVISIONS[ath.division];
+    const conf = G.conferenceOf();
+    const t9 = G.titleIX();
+    const divisionCard = '<section class="card">' +
+      '<div class="card-head"><h2>' + div.label + ' · ' + esc(conf.name) + '</h2>' +
+        (ath.transition ? '<span class="tag tag-bad">Transition: ' + plural(ath.transition, 'year') + ' left</span>' : '<span class="tag tag-good">Full member</span>') + '</div>' +
+      '<p class="hint">' + esc(div.note) + ' Conference rivals: ' + conf.rivals.map(esc).join(', ') + '.</p>' +
+      '<div class="kv-row">' +
+        kv('TV deal', money(conf.tv * (ath.transition ? 0.5 : 1)) + '<small>/yr</small>') +
+        kv('Scholarship per roster spot', div.schol ? money(div.schol) : 'None') +
+        kv('Ticket & media money', '×' + div.revenue.toFixed(1)) +
+        kv('Title IX', '<span class="' + (t9.over ? 'tone-bad' : 'tone-good') + '">' + (t9.over ? 'Out of compliance' : 'OK') + '</span> <small>' + pct(t9.women) + ' of athletes vs ' + pct(t9.students) + ' of students are women</small>') +
+      '</div>' +
+      (t9.over ? '<p class="note note-bad">Your athletes’ gender mix is ' + Math.round(t9.gap * 100) + ' points off your student body’s (allowed: ' + Math.round(t9.allowed * 100) + '). Expect Title IX complaints, and you can’t move up a division until it’s fixed. Launch ' + (t9.women < t9.students ? 'women’s' : 'men’s') + ' programs.</p>' : '') +
+      '<div class="grid grid-tight">' +
+        '<div><h3 class="sub">Divisions</h3><ul class="charter-list">' + ['D3', 'D2', 'D1'].map(id => {
+          const d = D.DIVISIONS[id];
+          const here = id === ath.division;
+          const req = d.minPrograms ? d.minPrograms + ' programs (' + d.minWomen + ' women’s)' + (d.minPrestige ? ', prestige ' + d.minPrestige : '') + ', ' + money(d.fee) + ' fee' : 'Open to all';
+          return '<li><span><b>' + d.label + '</b> <span class="muted small">' + req + '</span></span>' +
+            (here ? '<span class="tag tag-good">Current</span>' : '<button class="btn btn-ghost btn-small" data-action="ask-division" data-id="' + id + '">' + (d.rank < div.rank ? 'Move up' : 'Move down') + '</button>') + '</li>';
+        }).join('') + '</ul></div>' +
+        '<div><h3 class="sub">' + div.label + ' conferences</h3><ul class="charter-list">' + D.CONFERENCES.filter(c => c.div === ath.division).map(c => {
+          const here = c.id === ath.conference;
+          const chk = G.conferenceCheck(c.id);
+          return '<li><span><b>' + esc(c.name) + '</b> <span class="muted small">' + money(c.tv) + '/yr TV' + (c.minPrestige ? ' · prestige ' + c.minPrestige + '+' : '') + (c.needsFootball ? ' · football required' : '') + '</span></span>' +
+            (here ? '<span class="tag tag-good">Member</span>' : '<button class="btn btn-ghost btn-small" data-action="join-conference" data-id="' + c.id + '"' + (chk.ok ? '' : ' disabled title="' + esc(chk.reasons[0]) + '"') + '>Join</button>') + '</li>';
+        }).join('') + '</ul></div>' +
+      '</div>' +
+    '</section>';
+
+    return '<div class="stack">' + divisionCard +
       '<section class="card">' +
         '<div class="card-head"><h2>Varsity teams</h2><span class="muted small">' + plural(offered.length, 'program') + ' · ' + cost(offered) + ' a year</span></div>' +
         '<p class="hint">Men’s and women’s teams are separate programs, and recruits only play for their own. Admit recruits with high star ratings to build a roster. Winning teams sell more tickets, build school spirit and lift prestige.</p>' +
-        '<div class="kv-row">' +
-          kv('Women among students', pct(womenShare)) +
-          kv('Women among athletes', '<span class="' + (gap > 0.1 ? 'tone-bad' : 'tone-good') + '">' + pct(womenAthletes) + '</span>') +
-        '</div>' +
-        (gap > 0.1 && m.athletes ? '<p class="note">Your athletes don’t reflect your student body. Launch more ' + (womenAthletes < womenShare ? 'women’s' : 'men’s') + ' programs to even it out.</p>' : '') +
         '<div class="table-wrap"><table class="table"><thead><tr><th>Team</th><th class="num">Recruits on roster</th><th class="num">Avg rating</th><th class="num">Recruits applying</th><th>Last season</th><th class="num">Cost / year</th><th class="num">Revenue (avg year)</th><th></th></tr></thead><tbody>' +
           teams +
         '</tbody></table></div>' +
@@ -1223,7 +1398,9 @@
     const expected = expectedFreshmen();
     const shortDepts = s.majors.filter(id => G.deptCoverage(id) < 1);
     const warnings = [];
-    if (pending) warnings.push(num(pending) + ' application' + (pending > 1 ? 's are' : ' is') + ' still pending and will be denied.');
+    const staffLeft = s.staff.autoRead ? Math.min(G.staffRemaining(), pending) : 0;
+    if (staffLeft) warnings.push('Your staff will read ' + num(staffLeft) + ' of the ' + num(pending) + ' pending files using your rules.');
+    if (pending > staffLeft) warnings.push(num(pending - staffLeft) + ' pending application' + (pending - staffLeft > 1 ? 's' : '') + ' will be denied unread.');
     if (cov < 1) warnings.push('You only have seats for ' + pct(cov) + ' of what students need. Expect more students to leave.');
     if (shortDepts.length) warnings.push(shortDepts.length + ' department' + (shortDepts.length > 1 ? 's are' : ' is') + ' short on seats for their majors: ' + shortDepts.slice(0, 4).map(majorName).join(', ') + (shortDepts.length > 4 ? '…' : '') + '.');
     if (m.housing.freshBeds < Math.max(expected, 1)) warnings.push('Only ' + num(m.housing.freshBeds) + ' beds are free for about ' + Math.round(expected) + ' incoming freshmen.');
@@ -1242,6 +1419,41 @@
         render();
         showReport(rep);
         if (!G.saveOk) toast('Couldn’t save: your browser’s storage is full.');
+      }
+    });
+  }
+
+  function askReleaseEarly() {
+    const s = G.state;
+    const early = s.applicants.filter(G.isEarly);
+    const c = { admit: 0, defer: 0, deny: 0, pending: 0 };
+    for (const a of early) c[a.decision]++;
+    const edAdmits = early.filter(a => a.round === 'ED' && a.decision === 'admit');
+    const expectedCommit = edAdmits.reduce((x, a) => x + G.edCommitChance(a), 0);
+    showModal({
+      title: 'Send early decisions?',
+      body: '<p>You admitted <b>' + num(c.admit) + '</b>, deferred <b>' + num(c.defer) + '</b> and denied <b>' + num(c.deny) + '</b> early applicants.' +
+        (c.pending ? ' The <b>' + num(c.pending) + '</b> you haven’t decided will be deferred.' : '') + '</p>' +
+        (edAdmits.length ? '<p>About <b>' + Math.round(expectedCommit) + '</b> of your ' + num(edAdmits.length) + ' Early Decision admits will commit. Families whose aid falls short can back out.</p>' : '') +
+        '<p class="muted">Then the regular round opens with ' + num(s.applicants.length - early.length) + ' new applicants plus anyone you deferred. Early decisions can’t be changed afterward.</p>',
+      confirmLabel: 'Send decisions',
+      onConfirm: () => {
+        const r = G.releaseEarly();
+        ui.filter = 'pending';
+        ui.page = 0;
+        ui.openId = null;
+        renderDrawer();
+        render();
+        showModal({
+          title: 'Early decisions are out',
+          body: '<div class="report-grid">' +
+              kv('ED admitted', num(r.edAdmitted)) + kv('Committed', num(r.committed)) + kv('Released for aid', num(r.released)) + kv('EA admitted', num(r.eaAdmitted)) +
+              kv('Deferred', num(r.deferred)) + kv('Denied', num(r.denied)) +
+            '</div>' +
+            '<p>' + plural(r.committed, 'student has', 'students have') + ' already claimed a seat in the Class of ' + (s.year + 4) + '. The regular round is open.</p>',
+          confirmLabel: 'Open the regular round', cancel: false,
+          onConfirm: () => { ui.tab = 'applications'; render(); }
+        });
       }
     });
   }
@@ -1268,7 +1480,7 @@
       dismissable: false,
       title: 'The Class of ' + (r.year + 4) + ' is in',
       body:
-        '<div class="report-hero"><span class="report-big">' + num(r.enrolled) + '</span><span>freshmen enrolled' + (r.fromWaitlist ? ', ' + num(r.fromWaitlist) + ' from the waitlist' : '') + '</span></div>' +
+        '<div class="report-hero"><span class="report-big">' + num(r.enrolled) + '</span><span>freshmen enrolled' + (r.committed ? ', ' + num(r.committed) + ' through Early Decision' : '') + (r.fromWaitlist ? ', ' + num(r.fromWaitlist) + ' from the waitlist' : '') + '</span></div>' +
         '<div class="report-grid">' +
           kv('Applied', num(r.applied)) +
           kv('Admitted', num(r.admitted) + ' <small>' + pct(r.acceptRate) + ' rate</small>') +
@@ -1286,6 +1498,13 @@
         (r.standouts.length || r.troubleIn
           ? '<p class="small"><b>Standouts in this class:</b> ' + r.standouts.slice(0, 8).map(x => esc(x.name) + ' <span class="muted">(' + esc(hookLabel(x.hook)) + ')</span>').join(', ') + (r.standouts.length > 8 ? ' and ' + (r.standouts.length - 8) + ' more' : '') +
             (r.troubleIn ? (r.standouts.length ? '. ' : '') + '<span class="tone-bad">' + plural(r.troubleIn, 'student') + ' with disciplinary records enrolled.</span>' : '') + '</p>'
+          : '') +
+        ((r.early || r.staffRead || r.outcome && r.outcome.graduated)
+          ? '<p class="small report-notes">' + [
+              r.early ? '<b>Early round:</b> ' + plural(r.early.committed, 'Early Decision commit') + ', ' + num(r.early.eaAdmitted) + ' admitted Early Action, ' + num(r.early.deferred) + ' deferred.' : '',
+              r.staffRead && r.staffRead.read ? '<b>Staff</b> read ' + plural(r.staffRead.read, 'leftover file') + ' (' + r.staffRead.admit + ' admitted, ' + r.staffRead.hold + ' waitlisted, ' + r.staffRead.deny + ' denied).' : '',
+              r.outcome && r.outcome.graduated ? '<b>Class of ' + r.outcome.year + ':</b> ' + pct(r.outcome.gradRate) + ' graduated, ' + pct(r.outcome.placed) + ' employed or in grad school, median starting salary ' + money(r.outcome.salary) + '.' : ''
+            ].filter(Boolean).join('<br>') + '</p>'
           : '') +
         '<section class="report-events"><h3>Campus headlines</h3>' +
           (shown.length
@@ -1342,7 +1561,7 @@
   // ---------- events ----------
   function bulkDecide(test, decision) {
     let n = 0;
-    for (const a of viewList()) if (a.decision === 'pending' && test(a)) { a.decision = decision; n++; }
+    for (const a of viewList()) if (a.decision === 'pending' && !G.isLocked(a) && test(a) && G.setDecision(a, decision)) n++;
     G.save();
     render();
     return n;
@@ -1365,6 +1584,40 @@
     },
     'tab': el => { ui.tab = el.dataset.tab; render(); window.scrollTo({ top: 0 }); },
     'end-season': askEndSeason,
+    'release-early': askReleaseEarly,
+    'staff-read': () => {
+      const out = G.staffRead(viewList());
+      render();
+      toast(out.read ? 'Staff read ' + plural(out.read, 'file') + ': ' + out.admit + ' admitted, ' + out.hold + ' ' + (isEarlyPhase() ? 'deferred' : 'waitlisted') + ', ' + out.deny + ' denied' + (out.flagged ? ', ' + out.flagged + ' flagged for you' : '') + '.' : 'Your staff have no reads left this cycle.');
+    },
+    'readers': el => { G.setReaders(G.state.staff.readers + +el.dataset.d); render(); },
+    'campaign': el => { G.toggleCampaign(el.dataset.kind, el.dataset.id); render(); },
+    'ask-division': el => {
+      const target = el.dataset.id;
+      const d = D.DIVISIONS[target];
+      const chk = G.divisionCheck(target);
+      if (!chk.ok) { showModal({ title: 'Not yet eligible for ' + d.label, body: '<ul class="warn-list">' + chk.reasons.map(r => '<li>' + esc(r) + '</li>').join('') + '</ul>', confirmLabel: 'OK', cancel: false }); return; }
+      showModal({
+        title: (chk.up ? 'Move up to ' : 'Move down to ') + d.label + '?',
+        body: '<p>' + esc(d.note) + '</p>' + (chk.up
+          ? '<p>You pay a ' + money(d.fee) + ' membership fee and spend ' + plural(d.transition, 'year') + ' in transition: no conference titles and half the TV money. Athletic scholarships cost ' + money(d.schol) + ' per roster spot each year.</p>'
+          : '<p>You’ll save on scholarships, but lose TV money and the best recruits.</p>') +
+          '<p>You’ll join the ' + esc(D.CONFERENCES.filter(c => c.div === target).sort((a, b) => a.minPrestige - b.minPrestige)[0].name) + '.</p>',
+        confirmLabel: chk.up ? 'Move up' : 'Move down', danger: !chk.up,
+        onConfirm: () => { G.changeDivision(target); render(); toast('Welcome to ' + d.label + '.'); }
+      });
+    },
+    'join-conference': el => {
+      const chk = G.conferenceCheck(el.dataset.id);
+      const c = D.CONFERENCES.find(x => x.id === el.dataset.id);
+      if (!chk.ok) { toast(chk.reasons[0]); return; }
+      showModal({
+        title: 'Join the ' + esc(c.name) + '?',
+        body: '<p>Leaving your current conference costs a ' + money(500000) + ' exit fee. The ' + esc(c.name) + ' pays ' + money(c.tv) + ' a year in TV money.</p>',
+        confirmLabel: 'Join',
+        onConfirm: () => { G.joinConference(c.id); render(); toast('Joined the ' + c.name + '.'); }
+      });
+    },
     'filter': el => { ui.filter = el.dataset.filter; ui.page = 0; render(); },
     'page': el => {
       ui.page = Math.max(0, ui.page + +el.dataset.d);
@@ -1394,16 +1647,15 @@
     },
     'bulk-wait': () => {
       const n = bulkDecide(a => a.idx >= ui.bulkWait, 'waitlist');
-      toast(n ? 'Waitlisted ' + plural(n, 'applicant') + '.' : 'No pending files in this view at that index.');
+      toast(n ? (isEarlyPhase() ? 'Deferred ' : 'Waitlisted ') + plural(n, 'applicant') + '.' : 'No pending files in this view at that index.');
     },
     'bulk-wait-rest': () => {
       const n = bulkDecide(() => true, 'waitlist');
-      toast(n ? 'Waitlisted the remaining ' + plural(n, 'applicant') + '.' : 'No pending files in this view.');
+      toast(n ? (isEarlyPhase() ? 'Deferred' : 'Waitlisted') + ' the remaining ' + plural(n, 'applicant') + '.' : 'No pending files in this view.');
     },
     'row-decide': el => {
       const a = G.state.applicants.find(x => x.id === +el.dataset.id);
-      if (!a) return;
-      a.decision = el.dataset.d;
+      if (!G.setDecision(a, el.dataset.d)) return;
       G.save();
       refreshStatbar();
       if (ui.openId === a.id) renderDrawer();
@@ -1569,6 +1821,15 @@
       const min = +t.min, max = +t.max, scale = +t.dataset.scale || 1;
       if (t.value === '' || !Number.isFinite(v)) { render(); return; }
       setPath(G.state, t.dataset.bind, Math.max(min, Math.min(max, v)) / scale);
+      G.save();
+      render();
+    } else if (t.dataset.bindCheck) {
+      setPath(G.state, t.dataset.bindCheck, t.checked);
+      G.save();
+      render();
+    } else if (t.dataset.bindSelect) {
+      const v = t.value;
+      setPath(G.state, t.dataset.bindSelect, /^-?\d+$/.test(v) ? +v : v);
       G.save();
       render();
     } else if (t.dataset.uiCheck) {
