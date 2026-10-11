@@ -506,6 +506,49 @@
   const STAFF = { readerCost: 65000, filesPerReader: 600 };
   const RECRUITING = { stateCost: 40000, countryCost: 60000 };
 
+  // Graduate and professional schools. cost = one-time build, upkeep = yearly, capacity = full enrollment.
+  // needs = at least one of these undergraduate majors must be open. research feeds grants and prestige.
+  const G_ = (id, name, cost, upkeep, tuition, capacity, minPrestige, needs, research, note) => ({ id, name, cost, upkeep, tuition, capacity, minPrestige, needs, research, note });
+  const GRAD_PROGRAMS = [
+    G_('phd', 'Graduate School of Arts & Sciences', 25000000, 12000000, 15000, 500, 50, ['bio', 'chem', 'phys', 'math', 'psych', 'econ', 'hist', 'engl', 'neuro'], 5, 'PhD programs. Most doctoral students are funded, so tuition is low, but the research is what builds a reputation.'),
+    G_('law', 'School of Law', 40000000, 9000000, 48000, 600, 55, ['poli', 'legal', 'hist', 'phil', 'econ', 'crim'], 1.5, 'A law school turns out judges, senators and governors.'),
+    G_('med', 'School of Medicine', 150000000, 40000000, 62000, 480, 65, ['bio', 'chem', 'bchm', 'neuro'], 8, 'The most expensive school to run and the biggest research engine.'),
+    G_('mba', 'Business School', 30000000, 7000000, 58000, 450, 50, ['bus', 'fin', 'econ', 'acct', 'mktg'], 1, 'MBA tuition pays the bills, and its graduates run companies.'),
+    G_('engr', 'Graduate School of Engineering', 60000000, 15000000, 36000, 600, 55, ['engr', 'mech', 'elec', 'civil', 'bme', 'cheme', 'aero', 'cs'], 6, 'Labs, patents and federal research contracts.'),
+    G_('pubh', 'School of Public Health', 30000000, 8000000, 36000, 300, 50, ['pubh', 'bio', 'nurs', 'hsci'], 3, 'Epidemiology and health policy research.'),
+    G_('policy', 'School of Public Policy', 25000000, 6000000, 42000, 250, 55, ['poli', 'econ', 'intl', 'pubh'], 2, 'Trains diplomats and government leaders.'),
+    G_('nursing', 'Graduate School of Nursing', 20000000, 5000000, 35000, 300, 40, ['nurs'], 1, 'Nurse practitioners and nursing faculty.'),
+    G_('edu', 'Graduate School of Education', 15000000, 4000000, 26000, 400, 35, ['edu'], 1, 'Master’s degrees for teachers and principals.'),
+    G_('arts', 'School of the Arts', 15000000, 4000000, 32000, 200, 45, ['art', 'mus', 'film', 'thea', 'cwri', 'danc'], 0.5, 'MFA programs in writing, film, music and theater.')
+  ];
+
+  // Careers that make an alum famous years after graduation. majors: whose graduates can get there.
+  // delay: years after graduating. minIdx: how strong a student they had to be.
+  const C_ = (id, label, text, majors, delay, minIdx, w, fx) => ({ id, label, text, majors, delay, minIdx, w, fx });
+  const CAREERS = [
+    C_('senator', 'U.S. Senator', '{name} {yy} was elected to the United States Senate.', ['poli', 'legal', 'hist', 'econ', 'intl', 'phil'], [16, 32], 55, 3, { prestige: 0.6, buzz: 4 }),
+    C_('governor', 'Governor', '{name} {yy} was elected governor of {state}.', ['poli', 'legal', 'bus', 'econ', 'crim'], [16, 30], 50, 3, { prestige: 0.4, buzz: 3 }),
+    C_('ceo', 'Fortune 500 CEO', '{name} {yy} was named CEO of a Fortune 500 company and pledged {gift} to the school.', ['bus', 'fin', 'econ', 'acct', 'mktg', 'scm', 'engr', 'cs', 'data'], [15, 28], 55, 5, { buzz: 2, gift: [5e6, 25e6] }),
+    C_('founder', 'Billion-dollar founder', '{name} {yy} built a billion-dollar company and gave {gift} back.', ['cs', 'data', 'engr', 'entr', 'bus', 'cyber', 'infosys', 'game', 'elec'], [6, 15], 45, 4, { buzz: 5, gift: [10e6, 60e6] }),
+    C_('nobel', 'Nobel laureate', '{name} {yy} won the Nobel Prize.', ['phys', 'chem', 'bio', 'bchm', 'neuro', 'econ', 'math', 'med'], [25, 40], 85, 1, { prestige: 2.5, buzz: 7 }),
+    C_('astronaut', 'NASA astronaut', '{name} {yy} was selected as a NASA astronaut.', ['aero', 'phys', 'engr', 'mech', 'elec', 'astr'], [10, 20], 75, 2, { prestige: 0.4, buzz: 5 }),
+    C_('oscar', 'Oscar winner', '{name} {yy} won an Academy Award.', ['film', 'thea', 'anim', 'cwri', 'mus'], [8, 25], 0, 2, { buzz: 6 }),
+    C_('grammy', 'Grammy winner', '{name} {yy} won a Grammy.', ['mus', 'danc', 'thea'], [5, 15], 0, 2, { buzz: 5 }),
+    C_('author', 'Pulitzer-winning writer', '{name} {yy} won the Pulitzer Prize.', ['engl', 'cwri', 'jour', 'hist', 'afam'], [10, 28], 60, 2, { prestige: 0.5, buzz: 3 }),
+    C_('anchor', 'Network news anchor', '{name} {yy} became the anchor of a national evening newscast.', ['comm', 'jour', 'poli'], [12, 22], 45, 2, { buzz: 4 }),
+    C_('surgeon', 'Surgeon General', '{name} {yy} was appointed Surgeon General of the United States.', ['nurs', 'bio', 'neuro', 'pubh', 'hsci', 'med'], [20, 32], 70, 1, { prestige: 0.6, buzz: 3 }),
+    C_('justice', 'Supreme Court justice', '{name} {yy} was confirmed to the Supreme Court.', ['poli', 'legal', 'phil', 'law'], [28, 40], 85, 0.4, { prestige: 1.5, buzz: 6 }),
+    C_('judge', 'Federal judge', '{name} {yy} was confirmed as a federal judge.', ['poli', 'legal', 'phil', 'hist', 'law'], [18, 30], 65, 2, { prestige: 0.3, buzz: 1 }),
+    C_('architect', 'Pritzker Prize architect', '{name} {yy} won the Pritzker Prize for architecture.', ['arch', 'plan'], [20, 35], 60, 1, { prestige: 0.6, buzz: 3 }),
+    C_('coach', 'Pro head coach', '{name} {yy} was hired as the head coach of a professional team.', ['kin', 'sptm', 'hsci'], [12, 25], 0, 2, { buzz: 3 }),
+    C_('diplomat', 'Ambassador', '{name} {yy} was confirmed as a U.S. ambassador.', ['intl', 'poli', 'lang', 'econ', 'policy'], [15, 28], 60, 2, { prestige: 0.3, buzz: 1 })
+  ];
+  // Pro leagues that draft from your programs.
+  const DRAFTS = {
+    'm-football': 'NFL', 'm-basketball': 'NBA', 'w-basketball': 'WNBA', 'm-baseball': 'MLB', 'm-hockey': 'NHL',
+    'm-soccer': 'MLS', 'w-soccer': 'NWSL', 'w-volleyball': 'pro volleyball league', 'w-softball': 'pro softball league'
+  };
+
   const MASCOTS = ['Owls', 'Hawks', 'Bears', 'Wolves', 'Stags', 'Comets', 'Mariners', 'Foxes', 'Herons', 'Rams', 'Pioneers', 'Lynx', 'Bison', 'Ospreys', 'Badgers'];
   const NAME_PARTS = {
     first: ['North', 'West', 'East', 'South', 'Lake', 'Mount', 'Cedar', 'Pine', 'River', 'Harbor', 'Stone', 'Maple', 'Oak', 'Silver', 'Fair'],
@@ -527,6 +570,6 @@
   window.CB_DATA = {
     STATES, INTERNATIONAL, INTL_NAMES, FEMALE_NAMES, MALE_NAMES, NEUTRAL_NAMES, FIRST_NAMES, LAST_NAMES, AP_COURSES, SENIOR_APS, AP_EXCLUSIVE,
     AREAS, MAJORS, GEN_ED, SPORTS, CLASS_SIZES, LIFE_TAGS, ACTIVITIES, HOOKS, INCOME, DORMS, HALL_NAMES,
-    FRATERNITIES, SORORITIES, GREEK, GREEK_POLICIES, OUTCOMES, DIVISIONS, CONFERENCES, STAFF, RECRUITING, MASCOTS, NAME_PARTS, COLOR_PRESETS
+    FRATERNITIES, SORORITIES, GREEK, GREEK_POLICIES, OUTCOMES, DIVISIONS, CONFERENCES, STAFF, RECRUITING, GRAD_PROGRAMS, CAREERS, DRAFTS, MASCOTS, NAME_PARTS, COLOR_PRESETS
   };
 })();

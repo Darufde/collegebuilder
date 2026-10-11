@@ -317,6 +317,7 @@
     ['applications', 'Applications'],
     ['recruiting', 'Recruiting & staff'],
     ['majors', 'Majors'],
+    ['grad', 'Grad schools'],
     ['classes', 'Classes'],
     ['students', 'Students'],
     ['housing', 'Housing'],
@@ -339,7 +340,7 @@
       housing: m.housing.beds, greek: s.greek.length, sports: s.sports.length
     };
     const renderers = {
-      office: renderOffice, applications: renderApplications, recruiting: renderRecruiting, competition: renderCompetition, majors: renderMajors, classes: renderClasses,
+      office: renderOffice, applications: renderApplications, recruiting: renderRecruiting, competition: renderCompetition, grad: renderGrad, majors: renderMajors, classes: renderClasses,
       students: renderStudents, housing: renderHousing, greek: renderGreek, sports: renderSports, tuition: renderTuition
     };
     const body = renderers[ui.tab]();
@@ -472,11 +473,11 @@
     const history = '<section class="card span-2">' +
       '<div class="card-head"><h2>History</h2></div>' +
       (s.history.length
-        ? '<div class="table-wrap"><table class="table"><thead><tr><th>Cycle</th><th class="num">Applied</th><th class="num">Accept rate</th><th class="num">Yield</th><th class="num">Freshmen</th><th class="num">Women</th><th class="num">In-state</th><th class="num">Avg GPA</th><th class="num">Grad rate</th><th class="num">Grads earn</th><th class="num">Students</th><th class="num">Campus life</th><th class="num">Prestige</th><th class="num">Net</th><th class="num">Budget</th></tr></thead><tbody>' +
+        ? '<div class="table-wrap"><table class="table"><thead><tr><th>Cycle</th><th class="num">Applied</th><th class="num">Accept rate</th><th class="num">Yield</th><th class="num">Freshmen</th><th class="num">Women</th><th class="num">In-state</th><th class="num">Avg GPA</th><th class="num">Grad rate</th><th class="num">Grads earn</th><th class="num">Students</th><th class="num">Campus life</th><th class="num">Rank</th><th class="num">Prestige</th><th class="num">Net</th><th class="num">Budget</th></tr></thead><tbody>' +
           s.history.slice().reverse().map(h => '<tr><td>' + h.year + '</td><td class="num">' + num(h.applied) + '</td><td class="num">' + pct(h.acceptRate) + '</td><td class="num">' + pct(h.yieldRate) + '</td><td class="num">' + num(h.enrolled) + '</td>' +
             '<td class="num">' + (h.femalePct != null ? pct(h.femalePct) : '—') + '</td><td class="num">' + (h.inStatePct != null ? pct(h.inStatePct) : '—') + '</td>' +
             '<td class="num">' + (h.avgGpa != null ? h.avgGpa.toFixed(2) : '—') + '</td>' +
-            '<td class="num">' + (h.gradRate != null ? pct(h.gradRate) : '—') + '</td><td class="num">' + (h.salary ? money(h.salary) : '—') + '</td><td class="num">' + num(h.students) + '</td><td class="num">' + (h.life != null ? Math.round(h.life) : '—') + '</td><td class="num">' + h.prestige.toFixed(1) + '</td><td class="num ' + (h.net < 0 ? 'tone-bad' : '') + '">' + money(h.net) + '</td><td class="num">' + money(h.budget) + '</td></tr>').join('') +
+            '<td class="num">' + (h.gradRate != null ? pct(h.gradRate) : '—') + '</td><td class="num">' + (h.salary ? money(h.salary) : '—') + '</td><td class="num">' + num(h.students) + '</td><td class="num">' + (h.life != null ? Math.round(h.life) : '—') + '</td><td class="num">' + (h.rank ? '#' + h.rank : '—') + '</td><td class="num">' + h.prestige.toFixed(1) + '</td><td class="num ' + (h.net < 0 ? 'tone-bad' : '') + '">' + money(h.net) + '</td><td class="num">' + money(h.budget) + '</td></tr>').join('') +
           '</tbody></table></div>'
         : '<p class="muted">Your first cycle is underway. Results show up here after you end the season.</p>') +
     '</section>';
@@ -489,7 +490,7 @@
     return '<div class="grid">' + cycle +
       '<div class="col">' + policy + outlook + enrollment + '</div>' +
       '<div class="col">' + finance + news + '</div>' +
-      history + '</div>';
+      renderTrends() + history + '</div>';
   }
 
   // ---------- applications ----------
@@ -656,6 +657,7 @@
   // ---------- application folder (drawer) ----------
   function renderDrawer() {
     if (ui.screen !== 'game' || ui.openId == null) { drawerRoot.innerHTML = ''; return; }
+    const entering = !drawerRoot.firstChild;
     const s = G.state;
     const a = s.applicants.find(x => x.id === ui.openId);
     if (!a) { ui.openId = null; drawerRoot.innerHTML = ''; return; }
@@ -673,7 +675,7 @@
 
     drawerRoot.innerHTML =
       '<div class="scrim" data-action="close-app"></div>' +
-      '<aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="folder-name" tabindex="-1">' +
+      '<aside class="drawer' + (entering ? ' drawer-enter' : '') + '" role="dialog" aria-modal="true" aria-labelledby="folder-name" tabindex="-1">' +
         '<div class="drawer-nav">' +
           '<button class="btn btn-ghost btn-small" data-action="prev-app"' + (pos <= 0 ? ' disabled' : '') + '>← Prev</button>' +
           '<span class="muted small">' + (pos >= 0 ? num(pos + 1) + ' of ' + num(ui.navIds.length) : '') + '</span>' +
@@ -895,6 +897,171 @@
     return '<div class="grid">' + staff + budget + campaigns + '</div>';
   }
 
+  // ---------- charts ----------
+  // A small single-series line chart. The hover layer (crosshair and tooltip) is wired up once, below.
+  const CHART_FMT = {
+    num: v => num(v), pct: v => pct(v), money: v => money(v), rank: v => '#' + num(v), one: v => v.toFixed(1)
+  };
+  function lineChart(title, points, fmtKey, invert) {
+    if (points.length < 2) return '<figure class="chart"><figcaption>' + title + '</figcaption><p class="muted small chart-empty">Shows up after two seasons.</p></figure>';
+    const W = 300, H = 110, L = 8, R = 8, T = 10, B = 22;
+    const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
+    let lo = Math.min(...ys), hi = Math.max(...ys);
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const pad = (hi - lo) * 0.08;
+    lo -= pad; hi += pad;
+    const x = i => L + (W - L - R) * (points.length === 1 ? 0.5 : i / (points.length - 1));
+    const y = v => { const t = (v - lo) / (hi - lo); return T + (H - T - B) * (invert ? t : 1 - t); };
+    const fmt = CHART_FMT[fmtKey];
+    const path = points.map((p, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p[1]).toFixed(1)).join(' ');
+    const last = points[points.length - 1];
+    const grid = [0, 0.5, 1].map(t => '<line class="grid" x1="' + L + '" x2="' + (W - R) + '" y1="' + (T + (H - T - B) * t) + '" y2="' + (T + (H - T - B) * t) + '"/>').join('');
+    return '<figure class="chart" data-points="' + esc(JSON.stringify(points)) + '" data-fmt="' + fmtKey + '" data-invert="' + (invert ? 1 : 0) + '">' +
+      '<figcaption>' + title + ' <b>' + fmt(last[1]) + '</b></figcaption>' +
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(title + ' from ' + xs[0] + ' to ' + last[0] + ': ' + points.map(p => p[0] + ' ' + fmt(p[1])).join(', ')) + '">' +
+        grid +
+        '<path class="line" d="' + path + '" pathLength="1"/>' +
+        '<circle class="dot" cx="' + x(points.length - 1) + '" cy="' + y(last[1]) + '" r="4"/>' +
+        '<line class="cross" y1="' + T + '" y2="' + (H - B) + '" x1="0" x2="0"/>' +
+        '<circle class="hover-dot" r="4" cx="0" cy="0"/>' +
+        '<text class="axis" x="' + L + '" y="' + (H - 6) + '">' + xs[0] + '</text>' +
+        '<text class="axis" x="' + (W - R) + '" y="' + (H - 6) + '" text-anchor="end">' + last[0] + '</text>' +
+      '</svg><div class="chart-tip" hidden></div></figure>';
+  }
+  function chartHover(e) {
+    const fig = e.target.closest && e.target.closest('figure.chart[data-points]');
+    document.querySelectorAll('figure.chart.is-hover').forEach(f => { if (f !== fig) f.classList.remove('is-hover'); });
+    if (!fig) return;
+    const svg = fig.querySelector('svg');
+    const pts = JSON.parse(fig.dataset.points);
+    const box = svg.getBoundingClientRect();
+    const W = 300, L = 8, R = 8, T = 10, B = 22, H = 110;
+    const rel = (e.clientX - box.left) / box.width * W;
+    const i = Math.max(0, Math.min(pts.length - 1, Math.round((rel - L) / (W - L - R) * (pts.length - 1))));
+    const ys = pts.map(p => p[1]);
+    let lo = Math.min(...ys), hi = Math.max(...ys);
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+    const t = (pts[i][1] - lo) / (hi - lo);
+    const cx = L + (W - L - R) * (pts.length === 1 ? 0.5 : i / (pts.length - 1));
+    const cy = T + (H - T - B) * (fig.dataset.invert === '1' ? t : 1 - t);
+    fig.classList.add('is-hover');
+    const cross = svg.querySelector('.cross'), dot = svg.querySelector('.hover-dot');
+    cross.setAttribute('x1', cx); cross.setAttribute('x2', cx);
+    dot.setAttribute('cx', cx); dot.setAttribute('cy', cy);
+    const tip = fig.querySelector('.chart-tip');
+    tip.hidden = false;
+    tip.textContent = pts[i][0] + ': ' + CHART_FMT[fig.dataset.fmt](pts[i][1]);
+    tip.style.left = (cx / W * 100) + '%';
+  }
+  document.addEventListener('mousemove', chartHover);
+  document.addEventListener('mouseleave', () => document.querySelectorAll('figure.chart.is-hover').forEach(f => f.classList.remove('is-hover')));
+
+  function renderTrends() {
+    const s = G.state;
+    const h = s.history;
+    const series = (fn) => h.filter(r => fn(r) != null).map(r => [r.year, fn(r)]);
+    const ranks = s.rankings.map(r => [r.year, r.rank]);
+    return '<section class="card span-2">' +
+      '<div class="card-head"><h2>Trends</h2><span class="muted small">Hover a chart for each year</span></div>' +
+      '<div class="charts">' +
+        lineChart('Applications', series(r => r.applied), 'num') +
+        lineChart('Acceptance rate', series(r => r.acceptRate), 'pct') +
+        lineChart('Yield', series(r => r.yieldRate), 'pct') +
+        lineChart('Prestige', series(r => r.prestige), 'one') +
+        lineChart('National rank', ranks, 'rank', true) +
+        lineChart('Budget', series(r => r.budget), 'money') +
+      '</div>' +
+      '<p class="hint">National rank is drawn with No. 1 at the top.</p>' +
+    '</section>';
+  }
+
+  // ---------- graduate schools ----------
+  function renderGrad() {
+    const s = G.state;
+    const open = s.grad.map(x => [x, G.gradById(x.id)]);
+    const tuition = open.reduce((t, [x, g]) => t + x.students * g.tuition * 0.5, 0);
+    const upkeep = open.reduce((t, [, g]) => t + g.upkeep, 0);
+    const summary = '<section class="card">' +
+      '<div class="card-head"><h2>Graduate & research</h2><span class="muted small">' + plural(open.length, 'school') + ' open</span></div>' +
+      '<div class="kv-row">' +
+        kv('Graduate students', num(G.gradStudents())) +
+        kv('Research score', Math.round(G.researchScore()) + '<small>/100</small>') +
+        kv('Research grants', money(G.researchGrants()) + '<small>/yr</small>') +
+        kv('Tuition after aid', money(tuition) + '<small>/yr</small>') +
+        kv('Upkeep', money(upkeep) + '<small>/yr</small>') +
+      '</div>' +
+      '<p class="hint">Graduate schools take a few years to fill. Their research brings in grants that grow with your prestige, raises prestige and your national ranking, and draws undergraduates. Graduates of your law, medical and policy schools can go on to the Senate, the bench or Surgeon General.</p>' +
+    '</section>';
+    const table = open.length
+      ? '<section class="card"><div class="card-head"><h2>Your schools</h2></div><div class="table-wrap"><table class="table"><thead><tr><th>School</th><th class="num">Students</th><th class="num">Tuition after aid</th><th class="num">Upkeep</th><th class="num">Research</th><th class="num">Opened</th><th></th></tr></thead><tbody>' +
+          open.map(([x, g]) => '<tr><td><b>' + esc(g.name) + '</b></td><td class="num">' + num(x.students) + ' <span class="muted small">/ ' + num(g.capacity) + '</span></td>' +
+            '<td class="num">' + money(x.students * g.tuition * 0.5) + '</td><td class="num">' + money(g.upkeep) + '</td><td class="num">' + '●'.repeat(Math.max(1, Math.round(g.research / 2))) + '</td><td class="num">' + x.opened + '</td>' +
+            '<td class="act"><button class="btn btn-ghost btn-small" data-action="ask-close-grad" data-id="' + x.id + '">Close</button></td></tr>').join('') +
+        '</tbody></table></div></section>'
+      : '';
+    const catalog = '<section><div class="section-head"><h2>Open a graduate school</h2><span class="muted small">Paid from your budget today · ' + money(s.budget) + ' available</span></div><div class="catalog">' +
+      D.GRAD_PROGRAMS.filter(g => !s.grad.some(x => x.id === g.id)).map(g => {
+        const chk = G.gradCheck(g.id);
+        return '<article class="cat-item">' +
+          '<div class="cat-top"><h3>' + esc(g.name) + '</h3></div>' +
+          '<dl class="cat-meta"><div><dt>Build</dt><dd>' + money(g.cost) + '</dd></div><div><dt>Upkeep / yr</dt><dd>' + money(g.upkeep) + '</dd></div><div><dt>Students</dt><dd>' + num(g.capacity) + '</dd></div><div><dt>Research</dt><dd>' + '●'.repeat(Math.max(1, Math.round(g.research / 2))) + '</dd></div></dl>' +
+          '<p class="cat-note">' + esc(g.note) + ' Needs prestige ' + g.minPrestige + ' and one of: ' + g.needs.map(m => esc(G.majorById(m).name)).join(', ') + '.</p>' +
+          '<button class="btn btn-primary btn-small" data-action="open-grad" data-id="' + g.id + '"' + (chk.ok ? '' : ' disabled title="' + esc(chk.reasons.join(' ')) + '"') + '>' + (chk.ok ? 'Open for ' + money(g.cost) : esc(/^Needs one of/.test(chk.reasons[0]) ? 'Needs a related major' : chk.reasons[0])) + '</button>' +
+        '</article>';
+      }).join('') + '</div></section>';
+    return '<div class="stack">' + summary + table + catalog + '</div>';
+  }
+
+  // ---------- rankings ----------
+  function renderRankingsCard() {
+    const s = G.state;
+    const pub = s.rankings[s.rankings.length - 1];
+    const rows = pub ? G.nationalRankings(pub.year, pub.score) : G.nationalRankings();
+    const rank = rows.findIndex(r => r.id === 'you') + 1;
+    const prev = s.rankings.length > 1 ? s.rankings[s.rankings.length - 2].rank : null;
+    const top = rows.slice(0, 100);
+    const line = (r, i) => {
+      const you = r.id === 'you';
+      const x = you ? null : G.schoolById(r.id);
+      return '<tr' + (you ? ' class="is-sel"' : '') + '><td class="num">' + (i + 1) + '</td><td>' + (you ? '<span class="school">' + ourCrest(22) + '<b>' + esc(s.school.name) + '</b></span>' : schoolLabel(x, 22)) + '</td>' +
+        '<td class="small">' + (you ? esc(confShort(s.athletics.conference)) : esc(confShort(x.conf))) + '</td><td class="num">' + r.score.toFixed(1) + '</td></tr>';
+    };
+    return '<section class="card span-2">' +
+      '<div class="card-head"><h2>' + (pub ? pub.year + ' ' : '') + 'National rankings</h2><span class="muted small">Published each year when the season ends</span></div>' +
+      '<div class="kv-row">' +
+        kv('Your rank', '#' + num(rank) + ' <small>of ' + num(rows.length) + '</small>') +
+        (prev ? kv('Last year', '#' + num(prev) + ' <small class="' + (prev >= rank ? 'tone-good' : 'tone-bad') + '">' + (prev > rank ? '▲ ' + (prev - rank) : prev < rank ? '▼ ' + (rank - prev) : 'no change') + '</small>') : '') +
+        kv('Score', rows[rank - 1].score.toFixed(1)) +
+      '</div>' +
+      '<p class="hint">Real schools are ranked on their reputation, with a little movement each year. You’re scored on prestige plus selectivity, yield, graduate outcomes, research and spending per student. A top-150 ranking draws more applicants, and the top 100, 50, 25 and 10 make headlines.</p>' +
+      '<div class="table-wrap table-tall"><table class="table"><thead><tr><th class="num">Rank</th><th>School</th><th>Conference</th><th class="num">Score</th></tr></thead><tbody>' +
+        top.map(line).join('') +
+        (rank > 100 ? '<tr><td colspan="4" class="muted small">…</td></tr>' + line(rows[rank - 1], rank - 1) : '') +
+      '</tbody></table></div>' +
+    '</section>';
+  }
+
+  // ---------- postseason ----------
+  function renderPostseasonCard() {
+    const s = G.state;
+    const ps = s.postseason;
+    if (!ps || !ps.results || !ps.results.length) return '';
+    const name = id => (id === 'you' ? s.school.name : (G.schoolById(id) || { name: '—' }).name);
+    const crestFor = (id, size) => (id === 'you' ? ourCrest(size) : crest(G.schoolById(id), size));
+    return '<section class="card">' +
+      '<div class="card-head"><h2>' + ps.year + ' postseason</h2><span class="muted small">Division I championships</span></div>' +
+      '<div class="postseason">' + ps.results.map(r => {
+        const team = G.sportById(r.sport).name;
+        const mine = r.seed
+          ? '<p class="small"><b>' + esc(team) + '</b>: No. ' + r.seed + ' seed. ' + r.path.map(g => (g.win ? '<span class="tone-good">Beat</span> ' : '<span class="tone-bad">Lost to</span> ') + esc(name(g.opp)) + ' <span class="muted">(' + esc(g.round) + ')</span>').join(' · ') + (r.champion === 'you' ? ' · <b>National champions</b>' : '') + '</p>'
+          : '<p class="small muted">' + esc(team) + ' didn’t make the field of ' + r.size + '.</p>';
+        return '<div class="ps-item"><h3 class="sub">' + esc(r.name) + '</h3>' + mine +
+          '<div class="ps-final"><span class="muted small">Final Four</span>' + r.finalFour.map(id => '<span class="member' + (id === r.champion ? ' is-champ' : '') + '">' + crestFor(id, 20) + esc(name(id)) + (id === r.champion ? ' 🏆' : '') + '</span>').join('') + '</div></div>';
+      }).join('') + '</div>' +
+    '</section>';
+  }
+
   // ---------- competition ----------
   function renderCompetition() {
     const s = G.state;
@@ -957,7 +1124,7 @@
       '<p class="hint">School names, nicknames, conferences and colors come from Wikipedia’s list of NCAA Division I institutions. Academic prestige and athletic ratings are the game’s own estimates.</p>' +
     '</section>';
 
-    return '<div class="grid">' + stand + lostCard + h2hCard + homeCard + allCard + '</div>';
+    return '<div class="grid">' + renderRankingsCard() + stand + lostCard + h2hCard + homeCard + allCard + '</div>';
   }
 
   function schoolTable(list, tall) {
@@ -1167,6 +1334,19 @@
         : '<p class="muted">No standouts on campus yet. Look for the ★ Standout tag in Applications.</p>') +
     '</section>';
 
+    const famous = (s.famousAlumni || []).filter(f => !/^Drafted/.test(f.career));
+    const pros = (s.famousAlumni || []).filter(f => /^Drafted/.test(f.career));
+    const fameCard = '<section class="card span-2">' +
+      '<div class="card-head"><h2>Famous alumni</h2><span class="muted small">' + plural((s.futureStars || []).length, 'graduate is', 'graduates are') + ' quietly on track for something big</span></div>' +
+      '<p class="hint">A few graduates of every class go on to the Senate, the boardroom, the Oscars or a Nobel Prize, often decades later. Strong students and standouts are the likeliest. When it happens you get the headline, and often a donation.</p>' +
+      (famous.length
+        ? '<div class="table-wrap"><table class="table"><thead><tr><th>Alum</th><th>Class</th><th>Major</th><th>Became</th><th class="num">Year</th></tr></thead><tbody>' +
+            famous.slice(0, 30).map(f => '<tr><td><b>' + esc(f.name) + '</b></td><td class="mono">' + f.classOf + '</td><td>' + esc(majorName(f.major)) + '</td><td>' + esc(f.career) + '</td><td class="num">' + f.year + '</td></tr>').join('') +
+          '</tbody></table></div>'
+        : '<p class="muted">No famous alumni yet. Keep admitting strong students.</p>') +
+      (pros.length ? '<h3 class="sub">Went pro</h3><ul class="alumni">' + pros.slice(0, 24).map(f => '<li><b>' + esc(f.name) + '</b> ' + f.classOf + ' <span class="muted">· ' + esc(f.career.replace(/^Drafted \((.*)\)$/, '$1')) + ' · ' + f.year + '</span></li>').join('') + '</ul>' : '') +
+    '</section>';
+
     const alumni = '<section class="card span-2">' +
       '<div class="card-head"><h2>Alumni</h2><span class="muted small">' + num(s.alumni) + ' living alumni · ' + money(s.alumniGiving) + ' a year in giving</span></div>' +
       '<p class="hint">Every graduate gives back for life. Students who were in Greek life, came from wealthy families or started companies give the most. A bigger alumni network also draws more applicants.</p>' +
@@ -1203,7 +1383,7 @@
         : '<p class="muted">Your first graduating class crosses the stage when you end this season.</p>') +
     '</section>';
 
-    return '<div class="grid">' + lifeCard + who + outcomes + standoutCard + alumni + '</div>';
+    return '<div class="grid">' + lifeCard + who + outcomes + standoutCard + fameCard + alumni + '</div>';
   }
 
   // ---------- housing ----------
@@ -1410,7 +1590,12 @@
       '</section>';
     }
 
-    return '<div class="stack">' + divisionCard + standings +
+    const inviteConf = s.invite ? confById(s.invite.conf) : null;
+    const invite = inviteConf
+      ? '<div class="phase-banner"><div><b>Invitation.</b> The ' + esc(inviteConf.name) + ' wants ' + esc(s.school.name) + ' as a member: ' + money(inviteConf.tv) + ' a year in TV money and no exit fee if you accept now.</div>' +
+        '<div class="btn-row"><button class="btn btn-stripe btn-small" data-action="accept-invite">Accept</button><button class="btn btn-ghost btn-small" data-action="decline-invite">Decline</button></div></div>'
+      : '';
+    return '<div class="stack">' + invite + divisionCard + renderPostseasonCard() + standings +
       '<section class="card">' +
         '<div class="card-head"><h2>Varsity teams</h2><span class="muted small">' + plural(offered.length, 'program') + ' · ' + cost(offered) + ' a year</span></div>' +
         '<p class="hint">Men’s and women’s teams are separate programs, and recruits only play for their own. Admit recruits with high star ratings to build a roster. Winning teams sell more tickets, build school spirit and lift prestige.</p>' +
@@ -1541,6 +1726,20 @@
       '</div>';
     const btn = document.getElementById('modal-confirm');
     if (btn) btn.focus();
+    modalRoot.querySelectorAll('[data-count]').forEach(countUp);
+  }
+  const reduceMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Count a big number up from zero once, quickly.
+  function countUp(el) {
+    const end = +el.dataset.count;
+    if (!end || reduceMotion()) return;
+    const t0 = performance.now(), dur = 700;
+    const step = t => {
+      const k = Math.min(1, (t - t0) / dur);
+      el.textContent = num(Math.round(end * (1 - Math.pow(1 - k, 3))));
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   }
   function closeModal() {
     ui.modal = null;
@@ -1639,7 +1838,7 @@
       dismissable: false,
       title: 'The Class of ' + (r.year + 4) + ' is in',
       body:
-        '<div class="report-hero"><span class="report-big">' + num(r.enrolled) + '</span><span>freshmen enrolled' + (r.committed ? ', ' + num(r.committed) + ' through Early Decision' : '') + (r.fromWaitlist ? ', ' + num(r.fromWaitlist) + ' from the waitlist' : '') + '</span></div>' +
+        '<div class="report-hero"><span class="report-big" data-count="' + r.enrolled + '">' + num(r.enrolled) + '</span><span>freshmen enrolled' + (r.committed ? ', ' + num(r.committed) + ' through Early Decision' : '') + (r.fromWaitlist ? ', ' + num(r.fromWaitlist) + ' from the waitlist' : '') + '</span></div>' +
         '<div class="report-grid">' +
           kv('Applied', num(r.applied)) +
           kv('Admitted', num(r.admitted) + ' <small>' + pct(r.acceptRate) + ' rate</small>') +
@@ -1672,7 +1871,7 @@
           : '') +
         '<section class="report-events"><h3>Campus headlines</h3>' +
           (shown.length
-            ? '<ul class="events">' + shown.map(e => '<li class="ev-' + e.tone + '"><span>' + esc(e.text) + '</span>' + fx(e) + '</li>').join('') + '</ul>' +
+            ? '<ul class="events">' + shown.map((e, i) => '<li class="ev-' + e.tone + '" style="--i:' + i + '"><span>' + esc(e.text) + '</span>' + fx(e) + '</li>').join('') + '</ul>' +
               (events.length > shown.length ? '<p class="muted small">…and ' + (events.length - shown.length) + ' more in Campus news.</p>' : '')
             : '<p class="muted">A quiet year on campus.</p>') +
         '</section>' +
@@ -1688,6 +1887,7 @@
             (r.gift ? '<tr><td>Alumni gift</td><td class="num tone-good">+' + money(r.gift) + '</td></tr>' : '') +
             '<tr class="ledger-total"><td>Budget</td><td class="num ' + (r.budgetAfter < 0 ? 'tone-bad' : '') + '">' + money(r.budgetAfter) + '</td></tr>' +
           '</tbody></table>' +
+          (r.rank ? '<h3>National ranking</h3><p class="report-prestige">' + (r.rankBefore ? '#' + r.rankBefore + ' → ' : '') + '<b>#' + r.rank + '</b>' + (r.rankBefore && r.rankBefore !== r.rank ? ' <span class="' + (r.rank < r.rankBefore ? 'tone-good' : 'tone-bad') + '">(' + (r.rank < r.rankBefore ? '▲' : '▼') + Math.abs(r.rankBefore - r.rank) + ')</span>' : '') + '</p>' : '') +
           '<h3>Prestige</h3><p class="report-prestige">' + r.prestigeBefore.toFixed(1) + ' → <b>' + r.prestigeAfter.toFixed(1) + '</b> <span class="' + (dP >= 0 ? 'tone-good' : 'tone-bad') + '">(' + (dP >= 0 ? '+' : '') + dP.toFixed(1) + ')</span></p>' +
           (r.eventPrestige ? '<p class="muted small">' + (r.eventPrestige > 0 ? '+' : '') + r.eventPrestige.toFixed(1) + ' of that came from your students’ headlines.</p>' : '') +
           '</section>' +
@@ -1701,7 +1901,7 @@
 
   // ---------- render ----------
   // Replacing a focused, edited input fires its change event mid-render; run that render afterwards instead.
-  let rendering = false, renderAgain = false;
+  let rendering = false, renderAgain = false, shownTab = null;
   function render() {
     if (rendering) { renderAgain = true; return; }
     rendering = true;
@@ -1709,6 +1909,11 @@
       if (ui.screen === 'menu') app.innerHTML = renderMenu();
       else if (ui.screen === 'setup') app.innerHTML = renderSetup();
       else app.innerHTML = renderGame();
+      // A light fade only when you arrive on a tab, not on every update within it.
+      const panel = document.getElementById('panel');
+      const key = ui.screen === 'game' ? ui.tab : ui.screen;
+      if (panel && key !== shownTab) panel.classList.add('panel-enter');
+      shownTab = key;
     } finally {
       rendering = false;
     }
@@ -1831,6 +2036,25 @@
     },
     'merit-add': () => { G.addMeritRule(); render(); },
     'merit-remove': el => { G.removeMeritRule(+el.dataset.i); render(); },
+    'accept-invite': () => { const c = confById(G.state.invite.conf); G.acceptInvite(); render(); toast('Welcome to the ' + c.name + '.'); },
+    'decline-invite': () => { G.declineInvite(); render(); },
+    'open-grad': el => {
+      const g = G.gradById(el.dataset.id);
+      showModal({
+        title: 'Open the ' + esc(g.name) + '?',
+        body: '<p>Building it costs ' + money(g.cost) + ' now and ' + money(g.upkeep) + ' a year. It takes a few years to fill its ' + num(g.capacity) + ' seats.</p><p class="muted">' + esc(g.note) + '</p>',
+        confirmLabel: 'Open it',
+        onConfirm: () => { const r = G.openGrad(g.id); render(); toast(r.ok ? 'Opened the ' + g.name + '.' : r.reasons[0]); }
+      });
+    },
+    'ask-close-grad': el => {
+      const g = G.gradById(el.dataset.id);
+      showModal({
+        title: 'Close the ' + esc(g.name) + '?', danger: true, confirmLabel: 'Close it',
+        body: '<p>Its students leave and its research stops. You save ' + money(g.upkeep) + ' a year, but the building cost isn’t refunded.</p>',
+        onConfirm: () => { G.closeGrad(g.id); render(); }
+      });
+    },
     'stand-sport': el => { ui.standSport = el.dataset.id; render(); },
     'comp-conf': el => { ui.compConf = el.dataset.id; render(); },
     'major-area': el => { ui.majorArea = el.dataset.id; render(); },
