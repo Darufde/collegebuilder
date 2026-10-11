@@ -728,3 +728,16 @@ input[type="color"] { width: 40px; height: 30px; padding: 0; border: 1px solid v
   .folder-head h2 { padding-right: 0; padding-top: 2.6rem; }
   .pennant-lg { width: 100%; }
 }
+.ap-pending { font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; opacity: .7; white-space: nowrap; }
+.quick { display: inline-flex; gap: .25rem; }
+.qbtn { width: 1.6rem; height: 1.6rem; padding: 0; border-radius: 4px; border: 1.5px solid currentColor; background: var(--paper); font-family: var(--font-mono); font-size: .72rem; font-weight: 700; cursor: pointer; }
+.qbtn:hover { color: var(--paper); }
+.q-admit { color: var(--good); }
+.q-admit:hover { background: var(--good); border-color: var(--good); }
+.q-wait { color: var(--wait); }
+.q-wait:hover { background: var(--wait); border-color: var(--wait); }
+.q-deny { color: var(--bad); }
+.q-deny:hover { background: var(--bad); border-color: var(--bad); }
+.table-apps th, .table-apps td { padding-inline: .5rem; }
+.table-apps td:first-child, .table-apps th:first-child { padding-left: .75rem; }
+.table-apps td:last-child, .table-apps th:last-child { padding-right: .75rem; }

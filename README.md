@@ -13,14 +13,14 @@ Open `index.html` in any modern browser. There's no install or build step. Your 
    - Public schools start with cheaper in-state tuition and get state funding for every in-state student.
    - Private schools start with one price for everyone, larger alumni donations and a bigger aid budget.
 3. **Admissions cycle.** Each year brings a new pool of applicants. Every application shows:
-   - name, hometown, gender, and whether they're in-state, out-of-state or international
-   - unweighted GPA and weighted GPA, AP classes with exam scores, SAT or ACT (or test-optional)
+   - name, hometown, gender, and whether they're in-state, out-of-state or international (international students have names from their home country)
+   - unweighted GPA, weighted GPA (built from their finished APs and honors classes), AP classes with exam scores (senior-year APs show as in progress), SAT or ACT (or test-optional). Grades, test scores and AP scores line up with each other
    - intended major, sport and star rating, and activities (each feeds a part of campus life)
    - family income, what the family can pay, first-generation and legacy status, and interest in Greek life
    - any standout talent (National Merit Scholar, startup founder, social media creator, junior national athlete...) or a disciplinary record
    - an Academic Index (0–100), the aid package, and the chance they'll enroll if admitted
 
-   Stamp each file **Admit**, **Waitlist** or **Deny**, and offer individual scholarships. Filter the pool by in-state, out-of-state, international, women, men, athletes, standouts, legacies, first-gen and more. Bulk tools (admit by index, admit the top N, deny below an index) apply to whatever view you're in.
+   Stamp each file **Admit**, **Waitlist** or **Deny** from the folder or with the A/W/D buttons on each row, and offer individual scholarships. Filter the pool by in-state, out-of-state, international, women, men, athletes, standouts, legacies, first-gen and more. Bulk tools (admit by index, admit the top N, waitlist by index, waitlist all the rest, deny below an index) apply to whatever view you're in.
 4. **Applications grow with your school.** Prestige, the number of majors, campus life, buzz from your students' headlines, your alumni network, net price and housing all multiply interest. There's no ceiling: pools grow into the thousands and keep going.
 5. **Your students shape the school.**
    - Their activities build campus life: leadership, arts, service, research, media and the social scene, plus Greek life, school spirit, housing and diversity.
@@ -32,7 +32,7 @@ Open `index.html` in any modern browser. There's no install or build step. Your 
    - **Students**: campus life scores, gender and residency mix, home states, standout students and notable alumni.
    - **Housing**: build residence halls. Freshmen must live on campus; upperclassmen choose based on price and quality. Run out of beds and yield, retention and your reputation suffer.
    - **Greek life**: charter fraternities and sororities, build chapter houses, and set oversight from strict to hands-off. More members means more spirit and alumni giving, and more risk of hazing scandals.
-   - **Sports**: launch or cut varsity programs. Some recruit only men or only women.
+   - **Sports**: launch or cut varsity programs, listed as men's, women's and co-ed. Men's and women's teams are separate programs and recruits only play for their own. The tab compares the share of women among athletes with the student body.
    - **Tuition & aid**: set in-state and out-of-state tuition, room and board, the share of need you meet, and merit scholarships. See the net price for every income bracket.
 7. **End the season.** Admitted students decide, the waitlist fills open spots, seniors graduate, freshmen rush, teams play, your students make headlines, the budget settles and prestige moves. Then the next cycle opens.
 

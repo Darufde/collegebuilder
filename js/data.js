@@ -56,13 +56,36 @@
     ['WY', 'Wyoming', ['Cheyenne', 'Casper', 'Laramie']]
   ].map(([code, name, cities]) => ({ code, name, cities }));
 
+  // International hometowns. Students from abroad get names from their own country.
   const INTERNATIONAL = [
-    ['Toronto', 'Canada'], ['Vancouver', 'Canada'], ['Mexico City', 'Mexico'],
-    ['London', 'United Kingdom'], ['Seoul', 'South Korea'], ['Mumbai', 'India'],
-    ['Bengaluru', 'India'], ['Lagos', 'Nigeria'], ['São Paulo', 'Brazil'],
-    ['Shanghai', 'China'], ['Berlin', 'Germany'], ['Manila', 'Philippines'],
-    ['Sydney', 'Australia'], ['Nairobi', 'Kenya'], ['Hanoi', 'Vietnam']
+    ['Toronto', 'Canada'], ['Vancouver', 'Canada'], ['Mexico City', 'Mexico'], ['Guadalajara', 'Mexico'],
+    ['London', 'United Kingdom'], ['Manchester', 'United Kingdom'], ['Seoul', 'South Korea'], ['Busan', 'South Korea'],
+    ['Mumbai', 'India'], ['Bengaluru', 'India'], ['Delhi', 'India'], ['Lagos', 'Nigeria'], ['Abuja', 'Nigeria'],
+    ['São Paulo', 'Brazil'], ['Rio de Janeiro', 'Brazil'], ['Shanghai', 'China'], ['Beijing', 'China'], ['Shenzhen', 'China'],
+    ['Berlin', 'Germany'], ['Munich', 'Germany'], ['Manila', 'Philippines'], ['Cebu', 'Philippines'],
+    ['Sydney', 'Australia'], ['Melbourne', 'Australia'], ['Nairobi', 'Kenya'], ['Hanoi', 'Vietnam'], ['Ho Chi Minh City', 'Vietnam'],
+    ['Tokyo', 'Japan'], ['Osaka', 'Japan'], ['Paris', 'France'], ['Lyon', 'France'], ['Accra', 'Ghana'], ['Madrid', 'Spain']
   ];
+  // [women's first names, men's first names, family names] by country.
+  const INTL_NAMES = {
+    'Canada': [['Emma', 'Olivia', 'Charlotte', 'Chloé', 'Léa', 'Maya', 'Avery', 'Sophie'], ['Liam', 'Noah', 'William', 'Félix', 'Owen', 'Lucas', 'Benjamin', 'Nathan'], ['Tremblay', 'Gagnon', 'Roy', 'MacDonald', 'Campbell', 'Wilson', 'Côté', 'Leblanc', 'Martin', 'Smith']],
+    'Mexico': [['Sofía', 'Valentina', 'Regina', 'Ximena', 'Camila', 'Renata', 'Mariana', 'Fernanda'], ['Santiago', 'Mateo', 'Diego', 'Emiliano', 'Leonardo', 'Sebastián', 'Iker', 'Alejandro'], ['Hernández', 'García', 'Martínez', 'López', 'González', 'Rodríguez', 'Pérez', 'Sánchez', 'Ramírez', 'Flores']],
+    'United Kingdom': [['Olivia', 'Amelia', 'Isla', 'Ava', 'Freya', 'Poppy', 'Imogen', 'Harriet'], ['Oliver', 'George', 'Harry', 'Arthur', 'Alfie', 'Freddie', 'Archie', 'Rory'], ['Smith', 'Jones', 'Taylor', 'Brown', 'Evans', 'Wright', 'Hughes', 'Patel', 'Thompson', 'Clarke']],
+    'South Korea': [['Seo-yeon', 'Ji-woo', 'Ha-eun', 'Min-seo', 'Su-ah', 'Ye-jin', 'Da-eun', 'Yu-na'], ['Min-jun', 'Seo-jun', 'Do-yun', 'Ha-joon', 'Ji-ho', 'Jun-woo', 'Hyun-woo', 'Ye-jun'], ['Kim', 'Lee', 'Park', 'Choi', 'Jung', 'Kang', 'Cho', 'Yoon', 'Jang', 'Lim']],
+    'India': [['Aanya', 'Diya', 'Ananya', 'Ishita', 'Saanvi', 'Priya', 'Kavya', 'Meera'], ['Aarav', 'Vihaan', 'Arjun', 'Rohan', 'Aditya', 'Karthik', 'Siddharth', 'Ishaan'], ['Sharma', 'Patel', 'Reddy', 'Iyer', 'Gupta', 'Nair', 'Singh', 'Rao', 'Mehta', 'Kapoor']],
+    'Nigeria': [['Chiamaka', 'Adaeze', 'Funmilayo', 'Ngozi', 'Amara', 'Temitope', 'Zainab', 'Ifeoma'], ['Chinedu', 'Oluwaseun', 'Emeka', 'Tunde', 'Ibrahim', 'Obinna', 'Ayodele', 'Kelechi'], ['Okafor', 'Adeyemi', 'Okonkwo', 'Bello', 'Eze', 'Adebayo', 'Nwosu', 'Abubakar', 'Olawale', 'Obi']],
+    'Brazil': [['Ana', 'Beatriz', 'Júlia', 'Larissa', 'Mariana', 'Gabriela', 'Letícia', 'Isabela'], ['João', 'Pedro', 'Gabriel', 'Lucas', 'Matheus', 'Rafael', 'Thiago', 'Gustavo'], ['Silva', 'Santos', 'Oliveira', 'Souza', 'Costa', 'Pereira', 'Almeida', 'Ferreira', 'Carvalho', 'Rocha']],
+    'China': [['Mei', 'Xinyi', 'Yuxuan', 'Zihan', 'Ying', 'Jiayi', 'Lingling', 'Xiaoling'], ['Wei', 'Hao', 'Jun', 'Zihao', 'Yichen', 'Ming', 'Tao', 'Haoran'], ['Wang', 'Li', 'Zhang', 'Liu', 'Chen', 'Yang', 'Huang', 'Zhao', 'Wu', 'Zhou']],
+    'Germany': [['Emma', 'Mia', 'Hannah', 'Lena', 'Lea', 'Johanna', 'Clara', 'Marie'], ['Lukas', 'Leon', 'Finn', 'Jonas', 'Felix', 'Maximilian', 'Paul', 'Niklas'], ['Müller', 'Schmidt', 'Schneider', 'Fischer', 'Weber', 'Meyer', 'Wagner', 'Becker', 'Hoffmann', 'Koch']],
+    'Philippines': [['Maria', 'Angel', 'Princess', 'Andrea', 'Kristine', 'Nicole', 'Bea', 'Patricia'], ['Jose', 'John Paul', 'Mark', 'Miguel', 'Carlo', 'Joshua', 'Paolo', 'Rafael'], ['Santos', 'Reyes', 'Cruz', 'Bautista', 'Garcia', 'Mendoza', 'Ramos', 'Villanueva', 'Dela Cruz', 'Aquino']],
+    'Australia': [['Charlotte', 'Isla', 'Matilda', 'Ruby', 'Zoe', 'Grace', 'Chloe', 'Sienna'], ['Jack', 'Oliver', 'William', 'Lachlan', 'Cooper', 'Hamish', 'Thomas', 'Riley'], ['Smith', 'Jones', 'Williams', 'Brown', 'Wilson', 'Taylor', 'Nguyen', 'Kelly', 'Ryan', 'Murphy']],
+    'Kenya': [['Wanjiru', 'Akinyi', 'Njeri', 'Chebet', 'Atieno', 'Wambui', 'Nyambura', 'Jepchirchir'], ['Kamau', 'Otieno', 'Kipchoge', 'Mwangi', 'Odhiambo', 'Kiprono', 'Njoroge', 'Baraka'], ['Mwangi', 'Ochieng', 'Kariuki', 'Wanjala', 'Kiprop', 'Mutua', 'Omondi', 'Kimani', 'Cheruiyot', 'Njoroge']],
+    'Vietnam': [['Linh', 'Trang', 'Huong', 'Mai', 'Ngoc', 'Thao', 'Anh', 'Phuong'], ['Minh', 'Duc', 'Huy', 'Khoa', 'Tuan', 'Bao', 'Long', 'Quang'], ['Nguyen', 'Tran', 'Le', 'Pham', 'Hoang', 'Phan', 'Vu', 'Dang', 'Bui', 'Do']],
+    'Japan': [['Yui', 'Hina', 'Sakura', 'Aoi', 'Rin', 'Mei', 'Haruka', 'Yuna'], ['Haruto', 'Sota', 'Ren', 'Yuto', 'Riku', 'Kaito', 'Takumi', 'Hiroshi'], ['Sato', 'Suzuki', 'Takahashi', 'Tanaka', 'Watanabe', 'Ito', 'Yamamoto', 'Nakamura', 'Kobayashi', 'Kato']],
+    'France': [['Camille', 'Léa', 'Manon', 'Chloé', 'Inès', 'Louise', 'Juliette', 'Margaux'], ['Louis', 'Gabriel', 'Hugo', 'Arthur', 'Jules', 'Raphaël', 'Théo', 'Antoine'], ['Martin', 'Bernard', 'Dubois', 'Thomas', 'Robert', 'Moreau', 'Laurent', 'Lefebvre', 'Girard', 'Fournier']],
+    'Ghana': [['Akosua', 'Ama', 'Abena', 'Efua', 'Adwoa', 'Yaa', 'Esi', 'Afua'], ['Kwame', 'Kofi', 'Kwabena', 'Yaw', 'Kwaku', 'Kojo', 'Kwesi', 'Nana'], ['Mensah', 'Asante', 'Owusu', 'Boateng', 'Osei', 'Appiah', 'Agyeman', 'Darko', 'Addo', 'Ofori']],
+    'Spain': [['Lucía', 'Martina', 'Paula', 'Carmen', 'Alba', 'Elena', 'Noa', 'Irene'], ['Hugo', 'Pablo', 'Álvaro', 'Daniel', 'Javier', 'Marcos', 'Adrián', 'Mario'], ['García', 'Fernández', 'González', 'Rodríguez', 'López', 'Martínez', 'Sánchez', 'Romero', 'Navarro', 'Torres']]
+  };
 
   // First names by gender. NEUTRAL names can go to anyone.
   const FEMALE_NAMES = [
@@ -107,6 +130,13 @@
     '2-D Art and Design', 'Music Theory', 'Spanish Language', 'French Language',
     'Chinese Language', 'Latin', 'Seminar', 'Research', 'African American Studies'
   ];
+  // Courses most students take senior year. Applications go in before those exams, so they have no score yet.
+  const SENIOR_APS = [
+    'Calculus BC', 'English Literature', 'Physics C: Mechanics', 'US Government', 'Comparative Government',
+    'Macroeconomics', 'Microeconomics', 'Statistics', 'Psychology', 'Research', 'Physics 2'
+  ];
+  // Pairs a student wouldn't take both of.
+  const AP_EXCLUSIVE = [['Calculus AB', 'Calculus BC']];
 
   // Groupings for the majors catalog.
   const AREAS = [
@@ -226,29 +256,48 @@
     courses: ['English Composition', 'College Algebra', 'First-Year Seminar', 'Intro to Statistics', 'World Cultures', 'Health & Wellness', 'Ethics in Society', 'Information Literacy', 'Public Speaking Basics', 'Scientific Reasoning', 'Art Appreciation', 'Personal Finance Basics']
   };
 
-  // roster = full team size. games = games (or meets) per season.
+  // Every program is its own team: men's and women's squads are separate, and only co-ed esports mixes them.
+  // g = who it recruits ('M', 'F', or null for co-ed). roster = full team size. games = games (or meets) per season.
   // cost = yearly program cost. revenue = ticket and media money for a .500 season.
-  // g = which students the program recruits: 'M' men's, 'F' women's, or null for men's and women's squads.
+  const S = (id, base, g, roster, games, cost, revenue) => ({
+    id, base, g, roster, games, cost, revenue,
+    name: (g === 'M' ? 'Men’s ' : g === 'F' ? 'Women’s ' : '') + base
+  });
   const SPORTS = [
-    { id: 'football', name: 'Football', g: 'M', roster: 85, games: 12, cost: 2600000, revenue: 2200000 },
-    { id: 'basketball', name: 'Basketball', g: null, roster: 15, games: 30, cost: 950000, revenue: 1100000 },
-    { id: 'baseball', name: 'Baseball', g: 'M', roster: 35, games: 50, cost: 600000, revenue: 250000 },
-    { id: 'softball', name: 'Softball', g: 'F', roster: 25, games: 50, cost: 420000, revenue: 90000 },
-    { id: 'soccer', name: 'Soccer', g: null, roster: 28, games: 18, cost: 450000, revenue: 120000 },
-    { id: 'volleyball', name: 'Volleyball', g: null, roster: 18, games: 28, cost: 380000, revenue: 110000 },
-    { id: 'hockey', name: 'Ice Hockey', g: null, roster: 28, games: 34, cost: 1200000, revenue: 700000 },
-    { id: 'lacrosse', name: 'Lacrosse', g: null, roster: 40, games: 16, cost: 520000, revenue: 80000 },
-    { id: 'swim', name: 'Swimming & Diving', g: null, roster: 30, games: 12, cost: 480000, revenue: 30000 },
-    { id: 'track', name: 'Track & Field', g: null, roster: 50, games: 10, cost: 420000, revenue: 30000 },
-    { id: 'xc', name: 'Cross Country', g: null, roster: 14, games: 8, cost: 160000, revenue: 10000 },
-    { id: 'tennis', name: 'Tennis', g: null, roster: 10, games: 22, cost: 220000, revenue: 20000 },
-    { id: 'golf', name: 'Golf', g: null, roster: 10, games: 10, cost: 260000, revenue: 30000 },
-    { id: 'wrestling', name: 'Wrestling', g: 'M', roster: 30, games: 16, cost: 340000, revenue: 60000 },
-    { id: 'rowing', name: 'Rowing', g: null, roster: 40, games: 8, cost: 520000, revenue: 20000 },
-    { id: 'gymnastics', name: 'Gymnastics', g: 'F', roster: 16, games: 12, cost: 400000, revenue: 90000 },
-    { id: 'fieldhockey', name: 'Field Hockey', g: 'F', roster: 24, games: 18, cost: 330000, revenue: 20000 },
-    { id: 'waterpolo', name: 'Water Polo', g: null, roster: 24, games: 24, cost: 300000, revenue: 15000 },
-    { id: 'esports', name: 'Esports', g: null, roster: 12, games: 20, cost: 180000, revenue: 40000 }
+    S('m-football', 'Football', 'M', 85, 12, 2600000, 2200000),
+    S('m-basketball', 'Basketball', 'M', 15, 30, 1000000, 1100000),
+    S('m-baseball', 'Baseball', 'M', 35, 50, 600000, 250000),
+    S('m-soccer', 'Soccer', 'M', 28, 18, 300000, 60000),
+    S('m-volleyball', 'Volleyball', 'M', 18, 26, 220000, 20000),
+    S('m-hockey', 'Ice Hockey', 'M', 28, 34, 900000, 600000),
+    S('m-lacrosse', 'Lacrosse', 'M', 45, 15, 400000, 60000),
+    S('m-swim', 'Swimming & Diving', 'M', 28, 12, 300000, 15000),
+    S('m-track', 'Track & Field', 'M', 45, 10, 260000, 15000),
+    S('m-xc', 'Cross Country', 'M', 14, 8, 90000, 5000),
+    S('m-tennis', 'Tennis', 'M', 10, 22, 140000, 10000),
+    S('m-golf', 'Golf', 'M', 10, 10, 160000, 15000),
+    S('m-wrestling', 'Wrestling', 'M', 30, 16, 340000, 60000),
+    S('m-rowing', 'Rowing', 'M', 40, 8, 350000, 10000),
+    S('m-gymnastics', 'Gymnastics', 'M', 18, 12, 300000, 20000),
+    S('m-waterpolo', 'Water Polo', 'M', 24, 26, 220000, 10000),
+    S('w-basketball', 'Basketball', 'F', 15, 30, 700000, 300000),
+    S('w-softball', 'Softball', 'F', 25, 50, 420000, 90000),
+    S('w-soccer', 'Soccer', 'F', 28, 18, 300000, 70000),
+    S('w-volleyball', 'Volleyball', 'F', 18, 28, 300000, 100000),
+    S('w-beachvb', 'Beach Volleyball', 'F', 16, 20, 180000, 15000),
+    S('w-hockey', 'Ice Hockey', 'F', 24, 32, 600000, 80000),
+    S('w-lacrosse', 'Lacrosse', 'F', 35, 17, 350000, 30000),
+    S('w-fieldhockey', 'Field Hockey', 'F', 24, 18, 330000, 20000),
+    S('w-swim', 'Swimming & Diving', 'F', 30, 12, 300000, 15000),
+    S('w-track', 'Track & Field', 'F', 45, 10, 260000, 15000),
+    S('w-xc', 'Cross Country', 'F', 14, 8, 90000, 5000),
+    S('w-tennis', 'Tennis', 'F', 10, 22, 140000, 10000),
+    S('w-golf', 'Golf', 'F', 9, 10, 150000, 10000),
+    S('w-wrestling', 'Wrestling', 'F', 25, 14, 220000, 15000),
+    S('w-rowing', 'Rowing', 'F', 55, 8, 450000, 10000),
+    S('w-gymnastics', 'Gymnastics', 'F', 16, 12, 400000, 90000),
+    S('w-waterpolo', 'Water Polo', 'F', 24, 26, 220000, 10000),
+    S('esports', 'Esports', null, 12, 20, 180000, 40000)
   ];
 
   // Section sizes for a class. Small classes cost more per seat but raise prestige.
@@ -360,7 +409,7 @@
   ];
 
   window.CB_DATA = {
-    STATES, INTERNATIONAL, FEMALE_NAMES, MALE_NAMES, NEUTRAL_NAMES, FIRST_NAMES, LAST_NAMES, AP_COURSES,
+    STATES, INTERNATIONAL, INTL_NAMES, FEMALE_NAMES, MALE_NAMES, NEUTRAL_NAMES, FIRST_NAMES, LAST_NAMES, AP_COURSES, SENIOR_APS, AP_EXCLUSIVE,
     AREAS, MAJORS, GEN_ED, SPORTS, CLASS_SIZES, LIFE_TAGS, ACTIVITIES, HOOKS, INCOME, DORMS, HALL_NAMES,
     FRATERNITIES, SORORITIES, GREEK, GREEK_POLICIES, MASCOTS, NAME_PARTS, COLOR_PRESETS
   };

@@ -12,6 +12,8 @@
   const COURSE_NUMBERS = [101, 201, 301, 401, 250, 350];
   const DINING_PER_RESIDENT = 4500;
   const HOOK_RATE = 0.07;
+  // Bump when makeApplicant changes: a saved pool can only be rebuilt by the generator that made it.
+  const POOL_GEN = 2;
 
   const START = {
     public: {
@@ -24,7 +26,7 @@
     }
   };
   const STARTER_MAJORS = ['bio', 'bus', 'cs', 'engl', 'psych', 'hist'];
-  const STARTER_SPORTS = ['basketball', 'soccer', 'track'];
+  const STARTER_SPORTS = ['m-basketball', 'w-basketball', 'm-soccer', 'w-soccer'];
 
   // ---------- random helpers ----------
   // Everything random goes through rng, so an applicant pool can be rebuilt from its seed.
@@ -98,7 +100,7 @@
     const n = s.students.length;
     const m = {
       n, female: 0, inState: 0, outState: 0, intl: 0, firstGen: 0, legacy: 0, greekMembers: 0,
-      athletes: 0, aidTotal: 0, hooks: 0,
+      athletes: 0, athletesF: 0, aidTotal: 0, hooks: 0,
       byYear: [0, 0, 0, 0], majorCount: {}, chapterCount: {}, chapterTrouble: {},
       tagCount: {}, hookByTag: {}, states: {}
     };
@@ -111,7 +113,7 @@
       if (st.stateCode) m.states[st.stateCode] = (m.states[st.stateCode] || 0) + 1;
       if (st.firstGen) m.firstGen++;
       if (st.legacy) m.legacy++;
-      if (st.sport) m.athletes++;
+      if (st.sport) { m.athletes++; if (st.gender === 'F') m.athletesF++; }
       m.aidTotal += st.aid || 0;
       if (st.yearInSchool >= 1 && st.yearInSchool <= 4) m.byYear[st.yearInSchool - 1]++;
       m.majorCount[st.major] = (m.majorCount[st.major] || 0) + 1;
@@ -253,7 +255,7 @@
     const f = [
       { label: 'Prestige', mult: Math.exp((s.prestige - 35) / 22) },
       { label: 'Majors offered', mult: 0.7 + 0.05 * Math.min(s.majors.length, 20) + 0.015 * Math.max(0, s.majors.length - 20) },
-      { label: 'Varsity sports', mult: 1 + 0.015 * s.sports.length },
+      { label: 'Varsity sports', mult: 1 + 0.01 * s.sports.length },
       { label: 'Campus life', mult: 0.8 + m.life.score / 250 },
       { label: 'Buzz', mult: buzzMult(s.buzz) },
       { label: 'Alumni network', mult: 1 + Math.log10(1 + s.alumni / 4000) * 0.35 },
@@ -299,32 +301,53 @@
     const majorPool = majorIds && majorIds.length ? majorIds.map(majorById).filter(Boolean) : D.MAJORS;
     const major = weightedPick(majorPool, m => m.pop);
     const gender = rng() < major.f ? 'F' : 'M';
-    const firstName = rng() < 0.08 ? pick(D.NEUTRAL_NAMES) : pick(gender === 'F' ? D.FEMALE_NAMES : D.MALE_NAMES);
-
-    // AP classes lean toward the intended major's subjects. Scores track ability.
-    const apCount = clamp(Math.round(q / 100 * 11 + gauss() * 1.8 - 1), 0, 15);
-    const apNames = [];
-    while (apNames.length < apCount) {
-      const name = rng() < 0.45 ? pick(major.ap) : pick(D.AP_COURSES);
-      if (!apNames.includes(name)) apNames.push(name);
+    let name;
+    if (intl) {
+      const [women, men, family] = D.INTL_NAMES[region];
+      name = pick(gender === 'F' ? women : men) + ' ' + pick(family);
+    } else {
+      name = (rng() < 0.08 ? pick(D.NEUTRAL_NAMES) : pick(gender === 'F' ? D.FEMALE_NAMES : D.MALE_NAMES)) + ' ' + pick(D.LAST_NAMES);
     }
-    const aps = apNames.map(name => ({ name, score: clamp(Math.round(1 + q / 26 + gauss() * 0.8), 1, 5) }));
 
-    const gpa = round2(clamp(2.0 + q / 100 * 2.05 + gauss() * 0.18, 1.7, 4.0));
-    const wgpa = round2(clamp(gpa + apCount * 0.06 + rand(0, 0.12), gpa, 5.0));
+    // Two sides of ability: classwork drives grades, test-taking drives the SAT, ACT and AP exams.
+    // Both center on q, so a transcript hangs together: strong exam scores go with strong test scores.
+    const gradeSkill = clamp(q + gauss() * 7, 0, 100);
+    const testSkill = clamp(q + gauss() * 7, 0, 100);
+    const gpa = round2(clamp(2.0 + gradeSkill / 100 * 2.05 + gauss() * 0.12, 1.7, 4.0));
 
-    // Some applicants go test-optional; the rest send an SAT or ACT score.
+    // AP classes lean toward the intended major's subjects. Strong students take more of them.
+    const apCount = clamp(Math.round(q / 100 * 11 + gauss() * 1.5 - 1), 0, 14);
+    const apNames = [];
+    const excluded = n => D.AP_EXCLUSIVE.some(pair => pair.includes(n) && pair.some(o => o !== n && apNames.includes(o)));
+    let guard = 0;
+    while (apNames.length < apCount && guard++ < 200) {
+      const n = rng() < 0.45 ? pick(major.ap) : pick(D.AP_COURSES);
+      if (!apNames.includes(n) && !excluded(n)) apNames.push(n);
+    }
+    // Applications go in during senior year, before that spring's exams: those classes show as in progress.
+    const seniorPicks = apNames.filter(n => D.SENIOR_APS.includes(n)).concat(apNames.filter(n => !D.SENIOR_APS.includes(n)));
+    const inProgress = new Set(seniorPicks.slice(0, Math.min(apNames.length, Math.round(apNames.length * rand(0.3, 0.45)))));
+    const aps = apNames.map(n => ({
+      name: n,
+      score: inProgress.has(n) ? null : clamp(Math.round(0.1 + testSkill * 0.05 + (major.ap.includes(n) ? 0.3 : 0) + gauss() * 0.6), 1, 5)
+    }));
+    const apsDone = apNames.length - inProgress.size;
+
+    // Weighted GPA: 21 graded classes in grades 9–11, with +1.0 for each finished AP and +0.5 for each honors class.
+    const honors = clamp(Math.round(gradeSkill / 100 * 7 + gauss() * 1.5 - 1), 0, 10);
+    const wgpa = round2(clamp(gpa + (apsDone * 1 + honors * 0.5) / 21, gpa, 5.0));
+
+    // Some applicants go test-optional, mostly weaker test-takers; the rest send an SAT or ACT score.
     let sat = null, act = null;
-    const t = rng();
-    if (t < 0.12) { /* test-optional */ }
-    else if (t < 0.4) act = clamp(Math.round(12 + q / 100 * 24 + gauss() * 1.8), 1, 36);
-    else sat = clamp(Math.round((700 + q * 8.8 + gauss() * 55) / 10) * 10, 400, 1600);
+    if (rng() < 0.05 + Math.max(0, 60 - testSkill) / 220) { /* test-optional */ }
+    else if (rng() < 0.32) act = clamp(Math.round(12 + testSkill / 100 * 24 + gauss() * 1.2), 1, 36);
+    else sat = clamp(Math.round((700 + testSkill * 8.8 + gauss() * 35) / 10) * 10, 400, 1600);
 
-    // Recruits only play for their own squad: no women on the football roster, no men in softball.
+    // Men's and women's programs are separate teams: recruits only pick programs for their own gender.
     let sport = null, stars = 0;
     const sportIds = opts.sports || (rng() < 0.7 ? ctx.sports : null);
     const fits = x => !x.g || x.g === gender;
-    let sportPool = (sportIds && sportIds.length ? sportIds.map(sportById) : D.SPORTS).filter(fits);
+    let sportPool = (sportIds && sportIds.length ? sportIds.map(sportById).filter(Boolean) : D.SPORTS).filter(fits);
     if (!sportPool.length) sportPool = D.SPORTS.filter(fits);
     if (rng() < (opts.athleteRate != null ? opts.athleteRate : 0.2)) {
       sport = pick(sportPool).id;
@@ -358,10 +381,10 @@
 
     const a = {
       id: opts.id != null ? opts.id : s.nextId++,
-      name: firstName + ' ' + pick(D.LAST_NAMES),
+      name,
       gender,
       city, region, stateCode, intl,
-      gpa, wgpa, aps, sat, act,
+      gpa, wgpa, honors, aps, sat, act,
       major: major.id,
       sport, stars,
       activities,
@@ -389,7 +412,7 @@
     const s = state;
     const out = applicantOutlook();
     const ctx = poolContext();
-    s.pool = { seed: Math.floor(Math.random() * 2147483647), n: Math.round(out.total * rand(0.92, 1.08)), firstId: s.nextId, ctx };
+    s.pool = { gen: POOL_GEN, seed: Math.floor(Math.random() * 2147483647), n: Math.round(out.total * rand(0.92, 1.08)), firstId: s.nextId, ctx };
     s.nextId += s.pool.n;
     s.applicants = buildPool(s.pool);
   }
@@ -1030,7 +1053,7 @@
   function newGame(settings) {
     const cfg = START[settings.type];
     state = {
-      version: 2,
+      version: 3,
       school: {
         name: settings.name, mascot: settings.mascot,
         primary: settings.primary, secondary: settings.secondary,
@@ -1101,7 +1124,7 @@
   const STUDENT_KEYS = ['id', 'name', 'gender', 'region', 'stateCode', 'intl', 'gpa', 'major', 'sport', 'stars',
     'activities', 'idx', 'income', 'firstGen', 'legacy', 'hook', 'greekInt', 'aid', 'yearInSchool', 'classOf', 'greek'];
   const APPLICANT_KEYS = ['id', 'name', 'gender', 'city', 'region', 'stateCode', 'intl', 'gpa', 'wgpa', 'aps', 'sat', 'act',
-    'major', 'sport', 'stars', 'activities', 'idx', 'income', 'efc', 'firstGen', 'legacy', 'hook', 'greekInt', 'decision', 'scholarship'];
+    'major', 'sport', 'stars', 'activities', 'idx', 'income', 'efc', 'firstGen', 'legacy', 'hook', 'greekInt', 'decision', 'scholarship', 'honors'];
   const NULLABLE = new Set(['sat', 'act', 'sport', 'hook', 'stateCode', 'greek']);
   const BOOL_KEYS = new Set(['intl', 'firstGen', 'legacy', 'greekInt']);
   const AP_INDEX = new Map(D.AP_COURSES.map((n, i) => [n, i]));
@@ -1113,7 +1136,7 @@
     const out = keys.map(k => {
       const v = p[k];
       if (v === undefined || v === null) return null;
-      if (k === 'aps') return v.map(x => AP_INDEX.get(x.name) * 10 + x.score);
+      if (k === 'aps') return v.map(x => AP_INDEX.get(x.name) * 10 + (x.score || 0));
       if (k === 'activities') return v.map(x => (ACT_INDEX.has(x) ? ACT_INDEX.get(x) : x));
       if (BOOL_KEYS.has(k)) return v ? 1 : 0;
       return v;
@@ -1127,7 +1150,7 @@
       const v = arr[i];
       if (BOOL_KEYS.has(k)) p[k] = !!v;
       else if (v === undefined || v === null) { if (NULLABLE.has(k)) p[k] = null; }
-      else if (k === 'aps') p[k] = v.map(n => ({ name: D.AP_COURSES[Math.floor(n / 10)], score: n % 10 }));
+      else if (k === 'aps') p[k] = v.map(n => ({ name: D.AP_COURSES[Math.floor(n / 10)], score: n % 10 || null }));
       else if (k === 'activities') p[k] = v.map(x => (typeof x === 'number' ? ACT_NAMES[x] : x));
       else p[k] = v;
     });
@@ -1173,7 +1196,12 @@
     delete st.format;
     st.students = st.students.map(x => unpack(x, STUDENT_KEYS));
     state = st;
-    if (st.pool) {
+    if (st.pool && st.pool.gen !== POOL_GEN) {
+      // Made by an older generator: it can't be rebuilt faithfully, so a fresh pool is drawn after loading.
+      st.applicants = [];
+      st.pool = null;
+      st.stalePool = true;
+    } else if (st.pool) {
       st.applicants = buildPool(st.pool);
       const codes = st.decisions || '';
       const schol = new Map(st.scholarships || []);
@@ -1195,6 +1223,12 @@
       if (!raw) return null;
       state = migrate(hydrate(raw));
       invalidate();
+      if (state.stalePool) {
+        delete state.stalePool;
+        generateApplicants();
+        log('The game was updated, so this cycle’s applicant pool was redrawn.');
+        saveNow();
+      }
       return state;
     } catch (e) { return null; }
   }
@@ -1214,10 +1248,41 @@
     } catch (e) { /* ignore */ }
   }
 
-  // Bring a save from an earlier version of the game up to date.
+  // Bring a save from an earlier version of the game up to date, one version at a time.
   function migrate(st) {
-    if (st.version >= 2) return st;
+    if (st.version >= 3) return st;
     state = st;
+    if (!(st.version >= 2)) migrateTo2(st);
+    migrateTo3(st);
+    return st;
+  }
+
+  // Version 3 split shared teams into separate men's and women's programs.
+  function migrateTo3(st) {
+    const newIds = old => ['m-' + old, 'w-' + old, old].filter(id => SPORT_MAP.has(id));
+    const forPerson = (old, gender) => {
+      if (!old || SPORT_MAP.has(old) && old.indexOf('-') > 0) return old;
+      return newIds(old).find(id => { const sp = sportById(id); return !sp.g || sp.g === gender; }) || null;
+    };
+    const programs = [];
+    for (const old of st.sports) for (const id of newIds(old)) if (!programs.includes(id)) programs.push(id);
+    st.sports = programs;
+    const records = {};
+    for (const [old, rec] of Object.entries(st.sportRecords || {})) for (const id of newIds(old)) records[id] = rec;
+    st.sportRecords = records;
+    for (const p of st.students) {
+      p.sport = forPerson(p.sport, p.gender);
+      if (!p.sport) p.stars = 0;
+    }
+    st.version = 3;
+    // Applicants were drawn by the old generator; draw a fresh pool once loading finishes.
+    st.applicants = [];
+    st.pool = null;
+    st.stalePool = true;
+    invalidate();
+  }
+
+  function migrateTo2(st) {
     const cfg = START[st.school.type] || START.public;
     st.version = 2;
     if (st.tuitionOut == null) st.tuitionOut = st.tuitionIn;
@@ -1252,7 +1317,6 @@
     // Enough halls for the students already on campus.
     while (totalBeds() < st.students.length * 0.75) st.dorms.push({ id: st.nextId++, type: 'traditional', name: newHallName('traditional'), built: st.year - 30 });
     invalidate();
-    return st;
   }
 
   function randomSchoolName() {

@@ -30,6 +30,7 @@
     majorSearch: '',
     bulkAdmit: 70,
     bulkDeny: 35,
+    bulkWait: 55,
     bulkTop: 50,
     modal: null
   };
@@ -60,7 +61,6 @@
   const isInState = a => !a.intl && a.stateCode === G.state.school.state;
   const residencyWord = a => (a.intl ? 'International' : isInState(a) ? 'In-state' : 'Out-of-state');
   const hookLabel = id => (D.HOOKS[id] ? D.HOOKS[id].label : '');
-  const sportSquad = sp => (sp.g === 'M' ? 'Men’s' : sp.g === 'F' ? 'Women’s' : 'Men’s & women’s');
   const chapterById = id => G.state.greek.find(c => c.id === id);
 
   function inkFor(hex) {
@@ -513,6 +513,10 @@
         '<div class="bulk"><label for="bulk-top">Admit the top</label>' +
           '<input type="number" id="bulk-top" data-ui="bulkTop" value="' + ui.bulkTop + '" min="1" max="100000">' +
           '<span>by index</span><button class="btn btn-small btn-admit" data-action="bulk-top">Admit</button></div>' +
+        '<div class="bulk"><label for="bulk-wait">Waitlist with index at least</label>' +
+          '<input type="number" id="bulk-wait" data-ui="bulkWait" value="' + ui.bulkWait + '" min="0" max="100">' +
+          '<button class="btn btn-small btn-wait" data-action="bulk-wait">Waitlist</button>' +
+          '<button class="btn btn-small btn-ghost" data-action="bulk-wait-rest">Waitlist all the rest</button></div>' +
         '<div class="bulk"><label for="bulk-deny">Deny below</label>' +
           '<input type="number" id="bulk-deny" data-ui="bulkDeny" value="' + ui.bulkDeny + '" min="0" max="100">' +
           '<button class="btn btn-small btn-deny" data-action="bulk-deny">Deny</button></div>' +
@@ -562,7 +566,13 @@
         '<td>' + (sp ? esc(sp.name) + ' <span class="stars" aria-label="' + a.stars + ' of 5 stars">' + stars(a.stars) + '</span>' : '<span class="muted">—</span>') + '</td>' +
         '<td class="num">' + (aid.total ? money(aid.total) : '<span class="muted">—</span>') + (aid.gap > 0 ? ' <span class="tag tag-bad" title="Family is short of the net price">Gap</span>' : '') + '</td>' +
         '<td><span class="pill tone-' + yieldTone(p) + '">' + yieldWord(p) + ' ' + pct(p) + '</span></td>' +
-        '<td><span class="decision decision-' + a.decision + '">' + DECISION_LABEL[a.decision] + '</span></td>' +
+        '<td>' + (a.decision === 'pending'
+          ? '<span class="quick" role="group" aria-label="Decide ' + esc(a.name) + '">' +
+              '<button class="qbtn q-admit" data-action="row-decide" data-id="' + a.id + '" data-d="admit" title="Admit" aria-label="Admit ' + esc(a.name) + '">A</button>' +
+              '<button class="qbtn q-wait" data-action="row-decide" data-id="' + a.id + '" data-d="waitlist" title="Waitlist" aria-label="Waitlist ' + esc(a.name) + '">W</button>' +
+              '<button class="qbtn q-deny" data-action="row-decide" data-id="' + a.id + '" data-d="deny" title="Deny" aria-label="Deny ' + esc(a.name) + '">D</button>' +
+            '</span>'
+          : '<span class="decision decision-' + a.decision + '">' + DECISION_LABEL[a.decision] + '</span>') + '</td>' +
       '</tr>';
     }).join('');
     const pager = pages > 1
@@ -582,7 +592,8 @@
     const p = G.enrollChance(a);
     const pos = ui.navIds.indexOf(a.id);
     const sp = a.sport ? G.sportById(a.sport) : null;
-    const aps = a.aps.slice().sort((x, y) => y.score - x.score);
+    const aps = a.aps.slice().sort((x, y) => (y.score || 0) - (x.score || 0));
+    const apsLeft = a.aps.filter(x => !x.score).length;
     const factors = G.enrollFactors(a);
     const pkg = G.aidPackage(a);
     const hook = a.hook ? D.HOOKS[a.hook] : null;
@@ -616,10 +627,15 @@
             '<div><dt>Academic Index</dt><dd>' + a.idx + '<small>/100</small></dd></div>' +
           '</dl>' +
           '<section class="folder-sec">' +
-            '<h3>AP classes <span class="muted">(' + a.aps.length + ')</span></h3>' +
+            '<h3>AP classes <span class="muted">(' + (a.aps.length - apsLeft) + ' finished' + (apsLeft ? ', ' + apsLeft + ' this year' : '') + ')</span></h3>' +
             (aps.length
-              ? '<ul class="ap-list">' + aps.map(x => '<li><span>AP ' + esc(x.name) + '</span><span class="ap-score ap-' + x.score + '" title="AP exam score">' + x.score + '</span></li>').join('') + '</ul>'
+              ? '<ul class="ap-list">' + aps.map(x => '<li><span>AP ' + esc(x.name) + '</span>' +
+                  (x.score ? '<span class="ap-score ap-' + x.score + '" title="AP exam score">' + x.score + '</span>' : '<span class="ap-pending" title="Senior-year class; the exam is in May">In progress</span>') + '</li>').join('') + '</ul>'
               : '<p class="muted">No AP classes taken.</p>') +
+            (a.honors != null
+              ? '<p class="hint">Also ' + plural(a.honors, 'honors class', 'honors classes') + '. Weighted GPA adds 1.0 for each finished AP and 0.5 for each honors class across 21 classes in grades 9–11: ' +
+                a.gpa.toFixed(2) + ' + (' + (a.aps.length - apsLeft) + ' + ' + a.honors + ' × 0.5) ÷ 21 = ' + a.wgpa.toFixed(2) + '.</p>'
+              : '') +
           '</section>' +
           '<section class="folder-sec folder-two">' +
             '<div><h3>Intended major</h3><p>' + esc(majorName(a.major)) + ' ' + (s.majors.includes(a.major) ? '<span class="tag tag-good">Offered</span>' : '<span class="tag tag-bad">Not offered</span>') + '</p></div>' +
@@ -1048,43 +1064,62 @@
   }
 
   // ---------- sports ----------
+  const SPORT_GROUPS = [['M', 'Men’s sports'], ['F', 'Women’s sports'], [null, 'Co-ed']];
+
   function renderSports() {
     const s = G.state;
+    const m = G.metrics();
     const recruitsApplying = {};
     for (const a of s.applicants) if (a.sport) recruitsApplying[a.sport] = (recruitsApplying[a.sport] || 0) + 1;
-    const offered = s.sports.map(G.sportById).sort((a, b) => a.name.localeCompare(b.name));
-    const catalog = D.SPORTS.filter(x => !s.sports.includes(x.id)).sort((a, b) => (recruitsApplying[b.id] || 0) - (recruitsApplying[a.id] || 0));
+    const offered = s.sports.map(G.sportById).filter(Boolean);
+    const cost = list => money(list.reduce((x, sp) => x + sp.cost, 0));
+    const womenShare = m.n ? m.female / m.n : 0;
+    const womenAthletes = m.athletes ? m.athletesF / m.athletes : 0;
+    const gap = Math.abs(womenShare - womenAthletes);
+
+    const teamRows = list => list.sort((a, b) => a.base.localeCompare(b.base)).map(sp => {
+      const roster = G.rosterFor(sp.id);
+      const avg = roster.length ? roster.reduce((x, st) => x + st.stars, 0) / roster.length : 0;
+      const rec = s.sportRecords[sp.id];
+      return '<tr><td><b>' + esc(sp.base) + '</b></td><td class="num">' + roster.length + ' <span class="muted small">/ ' + sp.roster + '</span></td>' +
+        '<td class="num">' + (roster.length ? avg.toFixed(1) + ' ★' : '—') + '</td><td class="num">' + num(recruitsApplying[sp.id] || 0) + '</td>' +
+        '<td>' + (rec ? '<span class="record ' + (rec.w >= rec.l ? 'tone-good' : 'tone-bad') + '">' + rec.w + '–' + rec.l + '</span>' : '<span class="muted">First season ahead</span>') + '</td>' +
+        '<td class="num">' + money(sp.cost) + '</td><td class="num">' + money(sp.revenue) + '</td>' +
+        '<td class="act"><button class="btn btn-ghost btn-small" data-action="ask-cut-sport" data-id="' + sp.id + '">Cut</button></td></tr>';
+    }).join('');
+    const teams = SPORT_GROUPS.map(([g, label]) => {
+      const list = offered.filter(sp => sp.g === g);
+      if (!list.length && g === null) return '';
+      return '<tr class="group-row"><th colspan="8">' + label + ' <span class="muted small">' + plural(list.length, 'team') + (list.length ? ' · ' + cost(list) + ' a year' : '') + '</span></th></tr>' +
+        (list.length ? teamRows(list) : '<tr><td colspan="8" class="muted small">No teams yet. Launch one from the catalog below.</td></tr>');
+    }).join('');
+
+    const catalogFor = g => D.SPORTS.filter(x => x.g === g && !s.sports.includes(x.id))
+      .sort((a, b) => (recruitsApplying[b.id] || 0) - (recruitsApplying[a.id] || 0) || a.base.localeCompare(b.base))
+      .map(sp => '<article class="cat-item">' +
+        '<div class="cat-top"><h3>' + esc(sp.name) + '</h3><span class="muted small">' + sp.roster + ' on roster</span></div>' +
+        '<dl class="cat-meta"><div><dt>Cost / year</dt><dd>' + money(sp.cost) + '</dd></div><div><dt>Revenue</dt><dd>' + money(sp.revenue) + '</dd></div><div><dt>Recruits applying</dt><dd>' + num(recruitsApplying[sp.id] || 0) + '</dd></div></dl>' +
+        '<button class="btn btn-primary btn-small" data-action="add-sport" data-id="' + sp.id + '">Launch program</button>' +
+      '</article>').join('');
 
     return '<div class="stack">' +
       '<section class="card">' +
-        '<div class="card-head"><h2>Varsity teams</h2><span class="muted small">' + offered.length + ' programs · ' + money(offered.reduce((x, sp) => x + sp.cost, 0)) + ' a year</span></div>' +
-        '<p class="hint">Teams win with recruited athletes. Admit recruits with high star ratings to build a roster. Winning teams sell more tickets, build school spirit and lift prestige. Some programs recruit only men or only women.</p>' +
-        (offered.length
-          ? '<div class="table-wrap"><table class="table"><thead><tr><th>Team</th><th>Squads</th><th class="num">Recruits on roster</th><th class="num">Avg rating</th><th class="num">Recruits applying</th><th>Last season</th><th class="num">Cost / year</th><th class="num">Revenue (avg year)</th><th></th></tr></thead><tbody>' +
-            offered.map(sp => {
-              const roster = G.rosterFor(sp.id);
-              const avg = roster.length ? roster.reduce((x, st) => x + st.stars, 0) / roster.length : 0;
-              const rec = s.sportRecords[sp.id];
-              return '<tr><td><b>' + esc(sp.name) + '</b></td><td class="small">' + sportSquad(sp) + '</td><td class="num">' + roster.length + ' <span class="muted small">/ ' + sp.roster + '</span></td>' +
-                '<td class="num">' + (roster.length ? avg.toFixed(1) + ' ★' : '—') + '</td><td class="num">' + num(recruitsApplying[sp.id] || 0) + '</td>' +
-                '<td>' + (rec ? '<span class="record ' + (rec.w >= rec.l ? 'tone-good' : 'tone-bad') + '">' + rec.w + '–' + rec.l + '</span>' : '<span class="muted">First season ahead</span>') + '</td>' +
-                '<td class="num">' + money(sp.cost) + '</td><td class="num">' + money(sp.revenue) + '</td>' +
-                '<td class="act"><button class="btn btn-ghost btn-small" data-action="ask-cut-sport" data-id="' + sp.id + '">Cut</button></td></tr>';
-            }).join('') +
-            '</tbody></table></div>'
-          : '<p class="muted">No varsity teams. Launch one from the catalog below.</p>') +
-      '</section>' +
-      '<section>' +
-        '<div class="section-head"><h2>Catalog</h2><span class="muted small">Sorted by recruits applying this cycle</span></div>' +
-        '<div class="catalog">' +
-        catalog.map(sp => '<article class="cat-item">' +
-          '<div class="cat-top"><h3>' + esc(sp.name) + '</h3><span class="muted small">' + sp.roster + ' on roster</span></div>' +
-          '<p class="cat-area">' + sportSquad(sp) + '</p>' +
-          '<dl class="cat-meta"><div><dt>Cost / year</dt><dd>' + money(sp.cost) + '</dd></div><div><dt>Revenue</dt><dd>' + money(sp.revenue) + '</dd></div><div><dt>Recruits applying</dt><dd>' + num(recruitsApplying[sp.id] || 0) + '</dd></div></dl>' +
-          '<button class="btn btn-primary btn-small" data-action="add-sport" data-id="' + sp.id + '">Launch program</button>' +
-        '</article>').join('') +
+        '<div class="card-head"><h2>Varsity teams</h2><span class="muted small">' + plural(offered.length, 'program') + ' · ' + cost(offered) + ' a year</span></div>' +
+        '<p class="hint">Men’s and women’s teams are separate programs, and recruits only play for their own. Admit recruits with high star ratings to build a roster. Winning teams sell more tickets, build school spirit and lift prestige.</p>' +
+        '<div class="kv-row">' +
+          kv('Women among students', pct(womenShare)) +
+          kv('Women among athletes', '<span class="' + (gap > 0.1 ? 'tone-bad' : 'tone-good') + '">' + pct(womenAthletes) + '</span>') +
         '</div>' +
+        (gap > 0.1 && m.athletes ? '<p class="note">Your athletes don’t reflect your student body. Launch more ' + (womenAthletes < womenShare ? 'women’s' : 'men’s') + ' programs to even it out.</p>' : '') +
+        '<div class="table-wrap"><table class="table"><thead><tr><th>Team</th><th class="num">Recruits on roster</th><th class="num">Avg rating</th><th class="num">Recruits applying</th><th>Last season</th><th class="num">Cost / year</th><th class="num">Revenue (avg year)</th><th></th></tr></thead><tbody>' +
+          teams +
+        '</tbody></table></div>' +
       '</section>' +
+      SPORT_GROUPS.map(([g, label]) => {
+        const cards = catalogFor(g);
+        if (!cards) return '';
+        return '<section><div class="section-head"><h2>' + label + ' catalog</h2><span class="muted small">Sorted by recruits applying this cycle</span></div><div class="catalog">' + cards + '</div></section>';
+      }).join('') +
     '</div>';
   }
 
@@ -1356,6 +1391,22 @@
     'bulk-admit': () => {
       const n = bulkDecide(a => a.idx >= ui.bulkAdmit, 'admit');
       toast(n ? 'Admitted ' + plural(n, 'applicant') + '.' : 'No pending files in this view at that index.');
+    },
+    'bulk-wait': () => {
+      const n = bulkDecide(a => a.idx >= ui.bulkWait, 'waitlist');
+      toast(n ? 'Waitlisted ' + plural(n, 'applicant') + '.' : 'No pending files in this view at that index.');
+    },
+    'bulk-wait-rest': () => {
+      const n = bulkDecide(() => true, 'waitlist');
+      toast(n ? 'Waitlisted the remaining ' + plural(n, 'applicant') + '.' : 'No pending files in this view.');
+    },
+    'row-decide': el => {
+      const a = G.state.applicants.find(x => x.id === +el.dataset.id);
+      if (!a) return;
+      a.decision = el.dataset.d;
+      G.save();
+      refreshStatbar();
+      if (ui.openId === a.id) renderDrawer();
     },
     'bulk-deny': () => {
       const n = bulkDecide(a => a.idx < ui.bulkDeny, 'deny');
